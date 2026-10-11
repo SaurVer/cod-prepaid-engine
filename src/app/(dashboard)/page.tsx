@@ -1,4 +1,5 @@
 import { AutoRefresh, RefreshButton, SyncIfStale } from '@/components/live';
+import { HeroDemo } from '@/components/hero-demo';
 import { OverviewClient } from '@/components/overview';
 import { PageHeader } from '@/components/ui';
 import { getDb } from '@/lib/server/db.ts';
@@ -22,6 +23,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
         sub={`Cash-on-delivery orders from ${merchant?.name ?? 'your'} repeat customers, and the campaigns that move them to prepaid.`}
         actions={<RefreshButton />}
       />
+      <HeroDemo />
 
       <OverviewClient days={days} cost={cost} initial={{ date: sp.date, range: sp.range, show: sp.show, from: sp.from, to: sp.to }} />
     </div>
