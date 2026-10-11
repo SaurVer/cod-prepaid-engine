@@ -7,6 +7,8 @@ Deadline: submission due 13 Oct 2026, 11:59 PM IST. **A working core loop beats 
 The part to protect at all costs:
 **live order flow → real model → real EV calculation → real LLM draft → merchant approval → simulated customer response → randomised control group → measured extra profit → Inspector explanation → retraining.**
 
+> **v4.1** — The days calendar is replaced by a single **filter bar of dropdowns**: Period (Last 7 / 14 / 30 days / Custom range with from–to), Campaign status (All days / Campaign sent / Not run yet) and **Go to a day** (every one of the last 30 days, labelled with its status and extra profit). Totals and the orders-per-day chart sit below it, then the day list.
+
 > **What changed in v4** (third merchant review):
 > 1. **Model page rebuilt around two questions.** (a) *Is it time to retrain?* — new learning examples since the last training, progress to the 1,500 threshold, how many more are waiting for deliveries, the model in use, Retrain, and a plain old-vs-new comparison with "Switch to vN". (b) *What did the model predict?* — one row per campaign, opening every order's chances and expected profit with plain column names ("Chance the customer pays online · Send nothing / Reminder / ₹50 offer"). Training data, parameters and accuracy move to a "Technical details" page for data teams.
 > 2. **Calculations in plain words.** Expected profit is shown as "Out of 100 orders like this one: 25 pay online and are delivered, ₹300 each…" with totals, on the Inspector and on each campaign's predictions page. One sentence says why the AI chose what it did.
@@ -142,9 +144,9 @@ Unchanged from v1: **Score** (8 logistic regressions → `predictions`), **Decid
 ### 7.1 Overview (home, date-first)
 - **Header:** "Overview", one line on what the page is, **Refresh** ("Updated 5:42 PM"). No marketing hero; the product name lives in the top bar.
 - **Today so far:** orders, COD orders, orders ready for a campaign, COD cost at stake, and the next action (Run today's campaign · Campaign running · Review & send), plus "Open today".
-- **Days calendar** (left): the last 30 days in Monday-first weeks. Each day shows its date and status: *Not run* (past day), *Ready* (today), *Review*, *Running*, *Live*, or the measured extra profit (e.g. "+₹12.4k") once a campaign is sent, with a coloured top bar and a legend. Days outside the selected range are dimmed; clicking one widens the range. Clicking a day opens it in the list below and scrolls to it.
-- **Range and totals** (right): 7 / 14 / 30 days or Custom (from–to); COD orders, orders messaged, paid online after a message (each opens Orders filtered to the range), extra profit vs control with a "How?" explainer; orders-per-day chart.
-- **Day by day** list with a Show filter (All · Campaign sent · Not run yet). **No day is open on landing.** The expanded day is visibly different (blue band, accent bar, raised card). Expanded day: clickable tiles, COD cost at stake, campaign block (Run campaign → progress → Review & send → result strip with the filled-in equation).
+- **Filter bar** (dropdowns): **Period** — Last 7 / 14 / 30 days or Custom range (from–to date pickers within the last 30 days); **Campaign status** — All days / Campaign sent / Not run yet; **Go to a day** — any of the last 30 days, each labelled with its status ("Not run yet", "Campaign sent", "Ready to review"…) and extra profit when measured; choosing one widens the period if needed, opens that day in the list and scrolls to it. A count shows how many days are listed.
+- **Totals for the period:** COD orders, orders messaged, paid online after a message (each opens Orders filtered to the period), extra profit vs control with a "How?" explainer; orders-per-day chart.
+- **Day by day** list for the period and status chosen. **No day is open on landing.** The expanded day is visibly different (blue band, accent bar, raised card). Expanded day: clickable tiles, COD cost at stake, campaign block (Run campaign → progress → Review & send → result strip with the filled-in equation).
 - **State is kept:** the open day, range and filter are in the URL and remembered for the browser session, so leaving for a campaign and coming back reopens the same day.
 - **Run campaign** opens the dialog (control % and random test %), starts the campaign and **stays on the Overview**; a toast links to the campaign window.
 
@@ -190,7 +192,7 @@ Outcomes resolve in real time. Train only on control + random-test outcomes plus
 ## 10. Do not include
 - Confidence scores on recommendations; a monthly discount budget; the model recommending configuration changes; cross-merchant data; decisions for first-time customers or high-return-risk orders; checkout-time intervention; SMS or channel optimisation; LLM wording changing outcomes; real sending or real customer data; named Razorpay products other than "Razorpay"; fixed rule buckets presented as the decision logic; real authentication; pg_cron / Edge Functions / Realtime; claims of real-world accuracy.
 - **Removed in v2:** any simulated clock, Pause or Advance control in the UI; reset or re-seed controls inside the app.
-- **Removed in v4:** the Overview hero; date pills; the chart of AI-decided vs control; Summary / Parameters / Accuracy tabs on the main Model page (moved to Technical details); opening the Inspector in a new tab; automatic jump to the campaign after Run campaign; auto-opening today's row.
+- **Removed in v4:** the Overview hero; date pills; the days calendar (v4.1, replaced by dropdown filters); the chart of AI-decided vs control; Summary / Parameters / Accuracy tabs on the main Model page (moved to Technical details); opening the Inspector in a new tab; automatic jump to the campaign after Run campaign; auto-opening today's row.
 - **Removed in v3:** pre-run campaigns in the seeded history; the separate day page; a Refresh button on every page.
 
 ---
@@ -204,7 +206,7 @@ Outcomes resolve in real time. Train only on control + random-test outcomes plus
 ---
 
 ## 12. "Done" for the 90-second video
-1. **Overview** — Today strip; calendar; click a past day (e.g. 10 days ago): COD cost at stake. *(10 s)*
+1. **Overview** — Today strip; "Go to a day" dropdown → a past day (e.g. 10 days ago): COD cost at stake. *(10 s)*
 2. **Run campaign** — dialog with control % and random test %; stay on the Overview while it runs; "Campaign ready" notification. *(15 s)*
 3. **Review & send** in the campaign window — three decision cards; edit a message; **Approve & send** → pop-up → Confirm → "Did the messages pay off?" table and verdict. *(25 s)*
 4. **Why? →** on an order — Inspector: "out of 100 orders like this one", why the reminder beat the offer; Back. *(15 s)*

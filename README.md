@@ -18,7 +18,7 @@ approves, and a randomised control group measures the extra profit. Outcomes ret
 - **Control group** (no message; measures profit and trains the model) and **random test** (random reminder or offer; trains the model) sizes are set per campaign in the Run campaign dialog. Defaults are in Settings; the random test can be 0%.
 
 ## Where things are
-- **Overview** — Today strip, a calendar of the last 30 days, range (7/14/30/custom), day list. Open a day → Run campaign (you stay on the Overview while it runs).
+- **Overview** — Today strip, dropdown filters (period incl. custom range, campaign status, go to a day), totals, day list. Open a day → Run campaign (you stay on the Overview while it runs).
 - **Campaigns** — every campaign, and a dedicated window per campaign for review, Approve & send, and results.
 - **Orders** — every order, filterable; each links to the Inspector.
 - **Model** — new learning examples and when to retrain (retrain, compare, switch), and each campaign's predictions for every order in plain words. Training data, parameters and accuracy are under Technical details.
@@ -43,7 +43,7 @@ The app shows a "Razorpay" wordmark. To use the official logo, add the file from
 `public/razorpay-logo.svg` (or `.png`) and redeploy.
 
 ## 90-second video path
-1. **Overview**: Today strip → click a past day in the calendar (e.g. 10 days ago) → COD cost at stake.
+1. **Overview**: Today strip → **Go to a day** dropdown → a past day (e.g. 10 days ago) → COD cost at stake.
 2. **Run campaign** → set control group % and random test % → **Start campaign**; progress shows in the day and the top bar.
 3. **Review & send** in the campaign window → edit one message → **Approve & send** → **Confirm** → "Did the messages pay off?" fills in at once.
 4. **Why? →** on any order → Inspector: "out of 100 orders like this one", why the reminder beat the offer → Back.

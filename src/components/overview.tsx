@@ -62,111 +62,6 @@ function costFor(cost: CostInputs, orders: number) {
 const GRID = 'grid grid-cols-[160px_1fr_1fr_1fr_180px_1fr_1.2fr_28px] items-center gap-3';
 
 const KEY = 'payshift-overview';
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-function shortInr(v: number): string {
-  const a = Math.abs(v);
-  const s = v < 0 ? '−' : '+';
-  if (a >= 100000) return `${s}₹${(a / 100000).toFixed(1)}L`;
-  if (a >= 1000) return `${s}₹${(a / 1000).toFixed(1)}k`;
-  return `${s}₹${Math.round(a)}`;
-}
-
-function addDaysKey(date: string, n: number): string {
-  return new Date(Date.parse(`${date}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
-}
-
-/** Calendar of the last 30 days, Monday-first weeks. Each day shows its campaign status. */
-function Calendar({
-  days,
-  selected,
-  inRange,
-  onPick,
-}: {
-  days: DaySummary[];
-  selected: string | null;
-  inRange: Set<string>;
-  onPick: (date: string) => void;
-}) {
-  const byDate = new Map(days.map((d) => [d.date, d]));
-  const oldest = days[days.length - 1]?.date;
-  const newest = days[0]?.date;
-  if (!oldest || !newest) return null;
-  const dow = (d: string) => (new Date(`${d}T00:00:00Z`).getUTCDay() + 6) % 7; // Mon = 0
-  const start = addDaysKey(oldest, -dow(oldest));
-  const end = addDaysKey(newest, 6 - dow(newest));
-  const cells: string[] = [];
-  for (let d = start; d <= end; d = addDaysKey(d, 1)) cells.push(d);
-  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const month = (d: string) => MONTHS[Number(d.slice(5, 7)) - 1];
-  const label = month(oldest) === month(newest) ? `${month(newest)} ${newest.slice(0, 4)}` : `${month(oldest)} – ${month(newest)} ${newest.slice(0, 4)}`;
-  return (
-    <div>
-      <div className="mb-2 text-[12px] font-medium text-ink-soft">{label}</div>
-      <div className="grid grid-cols-7 gap-1.5">
-        {WEEKDAYS.map((w) => (
-          <div key={w} className="pb-0.5 text-center text-[10.5px] font-semibold uppercase tracking-[0.04em] text-ink-faint">
-            {w}
-          </div>
-        ))}
-        {cells.map((date) => {
-          const d = byDate.get(date);
-          if (!d) return <div key={date} className="h-[58px] rounded-lg" />;
-          const s = dayStatus(d);
-          const ep = extraProfit(d);
-          const active = selected === date;
-          const dim = !inRange.has(date);
-          const tag =
-            s === 'sent'
-              ? ep.value != null
-                ? { t: shortInr(ep.value), c: ep.value >= 0 ? 'text-ok' : 'text-bad' }
-                : { t: 'Measuring', c: 'text-ok' }
-              : s === 'open'
-                ? { t: d.past ? 'Not run' : 'Ready', c: 'text-warn' }
-                : s === 'running'
-                  ? { t: 'Running', c: 'text-rzp' }
-                  : s === 'review'
-                    ? { t: 'Review', c: 'text-[#6B4BD8]' }
-                    : s === 'live'
-                      ? { t: 'Live', c: 'text-rzp' }
-                      : { t: '—', c: 'text-ink-faint' };
-          const bar = { sent: 'bg-ok', open: 'bg-warn', running: 'bg-rzp', review: 'bg-[#6B4BD8]', live: 'bg-rzp', done: 'bg-line' }[s];
-          return (
-            <button
-              key={date}
-              onClick={() => onPick(date)}
-              title={`${weekday(date)} ${dayLabel(date)}`}
-              className={`relative flex h-[58px] flex-col items-start justify-between overflow-hidden rounded-lg border px-2 py-1.5 text-left transition-colors ${
-                active ? 'border-rzp bg-rzp text-white shadow-pop' : 'border-line bg-white hover:border-rzp/50'
-              } ${dim && !active ? 'opacity-45' : ''}`}
-            >
-              <span className={`absolute inset-x-0 top-0 h-[3px] ${active ? 'bg-white/60' : bar}`} />
-              <span className="flex w-full items-center justify-between">
-                <span className="text-[14px] font-semibold tabular-nums">{Number(date.slice(8))}</span>
-                {!d.past && <span className={`text-[9.5px] font-semibold uppercase ${active ? 'text-white/80' : 'text-rzp'}`}>Today</span>}
-              </span>
-              <span className={`text-[11px] font-medium tabular-nums ${active ? 'text-white/85' : tag.c}`}>{tag.t}</span>
-            </button>
-          );
-        })}
-      </div>
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-faint">
-        {[
-          ['bg-warn', 'Not run yet'],
-          ['bg-ok', 'Campaign sent (extra profit)'],
-          ['bg-[#6B4BD8]', 'Ready to review'],
-          ['bg-rzp', 'Today / running'],
-        ].map(([c, l]) => (
-          <span key={l} className="flex items-center gap-1.5">
-            <span className={`h-2 w-2 rounded-sm ${c}`} />
-            {l}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 /** Today at a glance, with the next action. */
 function TodayStrip({ d, cost, onOpen }: { d: DaySummary | undefined; cost: CostInputs; onOpen: () => void }) {
   if (!d || d.past) return null;
@@ -317,70 +212,86 @@ export function OverviewClient({
   const rangeQs = glance.from ? `&from=${glance.from}&to=${glance.to}` : '';
   const rangeLabel = range === 'custom' ? `${dayLabel(glance.from)} – ${dayLabel(glance.to)}` : `last ${range} days`;
 
-  const seg = (active: boolean) =>
-    `rounded-md px-3 py-1 text-[12.5px] transition-colors ${active ? 'bg-white font-medium text-ink shadow-card' : 'text-ink-soft hover:text-ink'}`;
 
   return (
     <div className="space-y-5">
       <TodayStrip d={days[0]} cost={cost} onOpen={() => pick(newest)} />
 
-      <div className="grid grid-cols-12 gap-4">
-        {/* Calendar */}
-        <div className="card col-span-5 px-4 py-3.5">
-          <div className="mb-2 flex items-center justify-between">
-            <h2>Days</h2>
-            <span className="text-[12px] text-ink-faint">Click a day to open it</span>
+      {/* Filters */}
+      <div className="card flex flex-wrap items-end gap-x-5 gap-y-3 px-4 py-3">
+        <label className="flex flex-col gap-1">
+          <span className="label">Period</span>
+          <select className="input min-w-[150px] py-1.5" value={range} onChange={(e) => setRange(e.target.value as Range)}>
+            <option value="7">Last 7 days</option>
+            <option value="14">Last 14 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="custom">Custom range…</option>
+          </select>
+        </label>
+        {range === 'custom' && (
+          <div className="flex items-end gap-1.5">
+            <label className="flex flex-col gap-1">
+              <span className="label">From</span>
+              <input type="date" className="input py-1" min={oldest} max={to} value={from} onChange={(e) => e.target.value && setFrom(e.target.value)} />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="label">To</span>
+              <input type="date" className="input py-1" min={from} max={newest} value={to} onChange={(e) => e.target.value && setTo(e.target.value)} />
+            </label>
           </div>
-          <Calendar days={days} selected={open?.date ?? null} inRange={inRangeSet} onPick={pick} />
-        </div>
+        )}
+        <label className="flex flex-col gap-1">
+          <span className="label">Campaign status</span>
+          <select className="input min-w-[170px] py-1.5" value={show} onChange={(e) => setShow(e.target.value as Show)}>
+            <option value="all">All days</option>
+            <option value="sent">Campaign sent</option>
+            <option value="open">Not run yet</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="label">Go to a day</span>
+          <select
+            className="input min-w-[280px] py-1.5"
+            value={open?.date ?? ''}
+            onChange={(e) => (e.target.value ? pick(e.target.value) : setSelected(null))}
+          >
+            <option value="">Choose a day…</option>
+            {days.map((d) => (
+              <option key={d.date} value={d.date}>
+                {d.past ? weekday(d.date) : 'Today'} {dayLabel(d.date)} · {badgeFor(d).label}
+                {extraProfit(d).value != null ? ` · ${inr(extraProfit(d).value)}` : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="ml-auto pb-1.5 text-[12px] text-ink-faint">
+          Showing {visible.length} of {inRange.length} days · {rangeLabel}
+        </span>
+      </div>
 
-        {/* Range, totals and trend */}
-        <div className="card col-span-7 px-4 py-3.5">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <div className="flex rounded-lg border border-line bg-panel p-0.5">
-              {(['7', '14', '30'] as const).map((r) => (
-                <button key={r} className={seg(range === r)} onClick={() => setRange(r)}>
-                  {r} days
-                </button>
-              ))}
-              <button className={seg(range === 'custom')} onClick={() => setRange('custom')}>
-                Custom
+      {/* Totals and trend */}
+      <div className="grid grid-cols-12 gap-4">
+        <div className="col-span-4 grid grid-cols-2 gap-4">
+          <Tile label="COD orders" value={num(glance.cod)} href={`/orders?view=cod${rangeQs}&back=${back}`} />
+          <Tile label="Orders messaged" value={num(glance.messaged)} href={`/orders?view=messaged${rangeQs}&back=${back}`} />
+          <Tile label="Paid online after a message" tone="blue" value={num(glance.paid)} href={`/orders?view=paid${rangeQs}&back=${back}`} />
+          <div className="card min-h-[104px] px-4 py-3.5">
+            <div className="flex items-center justify-between">
+              <span className="label">Extra profit vs control</span>
+              <button className="text-[11px] font-medium text-rzp hover:underline" onClick={() => setExplain((x) => !x)}>
+                {explain ? 'Hide' : 'How?'}
               </button>
             </div>
-            {range === 'custom' && (
-              <div className="flex items-center gap-1.5 text-[12.5px]">
-                <input type="date" className="input py-1" min={oldest} max={to} value={from} onChange={(e) => e.target.value && setFrom(e.target.value)} aria-label="From" />
-                <span className="text-ink-faint">to</span>
-                <input type="date" className="input py-1" min={from} max={newest} value={to} onChange={(e) => e.target.value && setTo(e.target.value)} aria-label="To" />
-              </div>
-            )}
-          </div>
-          <div className="mt-3 grid grid-cols-4 gap-3">
-            {[
-              { l: 'COD orders', v: num(glance.cod), href: `/orders?view=cod${rangeQs}&back=${back}` },
-              { l: 'Orders messaged', v: num(glance.messaged), href: `/orders?view=messaged${rangeQs}&back=${back}` },
-              { l: 'Paid online after a message', v: num(glance.paid), href: `/orders?view=paid${rangeQs}&back=${back}`, tone: 'text-rzp' },
-            ].map((t) => (
-              <Link key={t.l} href={t.href} className="group rounded-lg border border-line px-3 py-2.5 transition-colors hover:border-rzp/40">
-                <div className="text-[11px] font-medium text-ink-faint">{t.l}</div>
-                <div className={`mt-0.5 text-[20px] font-semibold tabular-nums ${t.tone ?? ''}`}>{t.v}</div>
-              </Link>
-            ))}
-            <div className="rounded-lg border border-line px-3 py-2.5">
-              <div className="flex items-center justify-between text-[11px] font-medium text-ink-faint">
-                Extra profit vs control
-                <button className="text-rzp hover:underline" onClick={() => setExplain((x) => !x)}>
-                  {explain ? 'Hide' : 'How?'}
-                </button>
-              </div>
-              <div className={`mt-0.5 text-[20px] font-semibold tabular-nums ${glance.extra >= 0 ? 'text-ok' : 'text-bad'}`}>{inr(glance.extra)}</div>
-              <div className="text-[11px] text-ink-faint">
-                {glance.measuredDays} day{glance.measuredDays === 1 ? '' : 's'} measured{glance.measuringDays > 0 && ` · ${glance.measuringDays} measuring`}
-              </div>
+            <div className={`metric mt-1.5 ${glance.extra >= 0 ? 'text-ok' : 'text-bad'}`}>{inr(glance.extra)}</div>
+            <div className="mt-1 text-[12px] text-ink-faint">
+              {glance.measuredDays} day{glance.measuredDays === 1 ? '' : 's'} measured{glance.measuringDays > 0 && ` · ${glance.measuringDays} measuring`}
             </div>
           </div>
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-[12px] font-medium text-ink-soft">Orders per day · {rangeLabel}</span>
+        </div>
+        <div className="card col-span-8 px-4 pb-2 pt-3.5">
+          <div className="mb-1 flex items-center justify-between">
+            <h2>Orders per day</h2>
+            <span className="text-[12px] text-ink-faint">{rangeLabel}</span>
           </div>
           <DailyChart data={inRange.slice().reverse().map((d) => ({ date: d.date, cod: d.cod, prepaid: d.prepaid, paid: d.paid_after_msg }))} />
         </div>
@@ -398,19 +309,6 @@ export function OverviewClient({
           <h2>
             Day by day <span className="font-normal text-ink-faint">· {rangeLabel}</span>
           </h2>
-          <div className="flex rounded-lg border border-line bg-panel p-0.5">
-            {(
-              [
-                ['all', 'All days'],
-                ['sent', 'Campaign sent'],
-                ['open', 'Not run yet'],
-              ] as const
-            ).map(([k, l]) => (
-              <button key={k} className={seg(show === k)} onClick={() => setShow(k)}>
-                {l}
-              </button>
-            ))}
-          </div>
         </div>
         <div className={`${GRID} border-b border-line bg-panel px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.03em] text-ink-faint`}>
           <span>Day</span>
