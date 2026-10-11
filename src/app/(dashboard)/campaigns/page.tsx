@@ -18,7 +18,7 @@ export default async function CampaignsPage() {
       <AutoRefresh />
       <PageHeader
         title="Campaigns"
-        sub="Every campaign you have run: past days (replays) and today. Open one to review and send it, or to see its results."
+        sub="Every campaign you have run: past days and today. Open one to review and send it, or to see its results."
         actions={
           <Link href="/" className="btn btn-primary">
             Run a campaign
@@ -62,7 +62,7 @@ export default async function CampaignsPage() {
                     {campaignName(r.created_at)}
                   </Link>
                   <div className="text-[11px] text-ink-faint">
-                    {r.replay ? `Replay · run ${r.started_real_at ? dateTimeIST(r.started_real_at) : ''}` : 'Live'} · model v{r.model_version}
+                    Model v{r.model_version}
                   </div>
                 </td>
                 <td>
@@ -74,7 +74,6 @@ export default async function CampaignsPage() {
                       {STATUS_LABEL[r.status]}
                       {['queued', 'scoring', 'deciding', 'drafting'].includes(r.status) ? ` · ${Math.round(r.progress)}%` : ''}
                     </Badge>
-                    {r.replay && <Badge tone="amber">Replay</Badge>}
                   </span>
                 </td>
                 <td className="text-right">{num(r.order_count)}</td>
@@ -111,7 +110,7 @@ export default async function CampaignsPage() {
                   <Link href="/" className="link">
                     Overview
                   </Link>{' '}
-                  and click Run campaign. Past days replay as if sent at 9 PM that evening.
+                  and click Run campaign.
                 </td>
               </tr>
             )}

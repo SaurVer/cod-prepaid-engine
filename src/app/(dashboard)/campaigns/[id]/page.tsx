@@ -61,7 +61,6 @@ export default async function CampaignPage({
           <span className="flex items-center gap-3">
             {name}
             <Badge tone={sent ? 'green' : run.status === 'ready_for_review' ? 'violet' : 'blue'}>{STATUS_LABEL[run.status]}</Badge>
-            {replay && <Badge tone="amber">Replay of {dayLabel(day)}, 9 PM</Badge>}
           </span>
         }
         sub={`${num(run.order_count)} orders from ${dayLabel(day)} · AI model v${run.model_version} · control ${pct(Number(snap.holdout_pct ?? 0), 0)} · random test ${pct(Number(snap.exploration_pct ?? 0), 0)} · started by the ${run.created_by_role}`}

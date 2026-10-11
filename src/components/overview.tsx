@@ -34,7 +34,7 @@ function badgeFor(d: DaySummary): { label: string; tone: 'green' | 'blue' | 'amb
     case 'review':
       return { label: 'Ready to review', tone: 'violet' };
     case 'sent':
-      return { label: d.campaigns.some((c) => c.replay) ? 'Replayed & sent' : 'Campaign sent', tone: 'green' };
+      return { label: 'Campaign sent', tone: 'green' };
     case 'open':
       return d.past ? { label: 'Not run yet', tone: 'amber' } : { label: 'Ready for a campaign', tone: 'amber' };
     case 'live':
@@ -403,7 +403,6 @@ function CampaignSummary({ c, back }: { c: DayCampaign; back: string }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 font-medium">
           {campaignName(c.created_at)} <Badge tone="green">Sent</Badge>
-          {c.replay && <Badge tone="amber">Replay</Badge>}
         </div>
         <Link href={`/campaigns/${c.id}?back=${back}`} className="link text-[12.5px]">
           View results →
@@ -506,7 +505,7 @@ function DayPanel({ d, cost, back }: { d: DaySummary; cost: CostInputs; back: st
               <div key={c.id} className="flex items-center justify-between rounded-lg border border-[#6B4BD8]/25 bg-[#F6F3FF] px-4 py-3">
                 <div>
                   <div className="font-medium">
-                    {campaignName(c.created_at)} is ready {c.replay && <Badge tone="amber">Replay</Badge>}
+                    {campaignName(c.created_at)} is ready
                   </div>
                   <div className="text-[12px] text-ink-soft">{num(c.order_count)} orders · the AI has picked an action and drafted a message for each</div>
                 </div>
@@ -523,11 +522,11 @@ function DayPanel({ d, cost, back }: { d: DaySummary; cost: CostInputs; back: st
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <div className="font-medium">
-                      {num(d.ready)} orders {d.past ? 'can be replayed' : 'are ready for a campaign'}
+                      {num(d.ready)} orders are ready for a campaign
                     </div>
                     <div className="mt-0.5 text-[12px] text-ink-soft">
                       {d.past
-                        ? `This day has passed. A campaign replays it as if the messages went out at 9 PM on ${dayLabel(d.date)}; results up to today appear right after you send.`
+                        ? `Messages go out at 9 PM on ${dayLabel(d.date)}; results up to today appear right after you send.`
                         : 'The AI scores each order, picks no message, a reminder or a ₹50 off offer, and drafts the message. Nothing is sent until you approve.'}
                     </div>
                   </div>

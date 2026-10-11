@@ -77,7 +77,7 @@ export function RunCampaignButton({
             </div>
             {past && (
               <div className="mt-3 rounded-lg border border-warn/25 bg-warn-soft px-3.5 py-2.5 text-[12.5px] text-warn">
-                <b>This day has passed, so the campaign is a replay.</b> It runs as if the messages went out at 9 PM on {dayLabel(date)}. When you send it,
+                Messages go out at 9 PM on {dayLabel(date)}. When you send it,
                 customer responses, shipping and deliveries up to today are filled in straight away, so you see the result immediately.
               </div>
             )}

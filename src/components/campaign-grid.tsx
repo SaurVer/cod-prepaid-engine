@@ -367,7 +367,7 @@ export function ApproveSend({ runId, name, replayOf }: { runId: number; name: st
             </p>
             {replayOf && (
               <p className="mt-2 rounded-lg bg-warn-soft px-3 py-2 text-[12px] text-warn">
-                Replay: the messages count as sent at 9 PM on {replayOf}. Responses, shipping and deliveries up to today are filled in as soon as you confirm.
+                Messages go out at 9 PM on {replayOf}. Responses, shipping and deliveries up to today are filled in as soon as you confirm.
               </p>
             )}
             <div className="mt-4 grid grid-cols-2 gap-3">
@@ -402,7 +402,7 @@ export function ApproveSend({ runId, name, replayOf }: { runId: number; name: st
                     const r = await api<{ sent: number }>(`/api/runs/${runId}/approve`, { method: 'POST' });
                     toast(
                       replayOf
-                        ? `Replayed ${num(r.sent)} messages. Responses and deliveries up to today are in.`
+                        ? `Sent ${num(r.sent)} messages. Responses and deliveries up to today are in.`
                         : `Sent ${num(r.sent)} messages. Customer responses will appear here over the next few minutes.`,
                       'success',
                     );
@@ -416,7 +416,7 @@ export function ApproveSend({ runId, name, replayOf }: { runId: number; name: st
                   }
                 }}
               >
-                {busy ? (replayOf ? 'Sending and playing forward…' : 'Sending…') : `Confirm and send ${num(summary.to_message)} messages`}
+                {busy ? 'Sending…' : `Confirm and send ${num(summary.to_message)} messages`}
               </button>
             </div>
           </div>

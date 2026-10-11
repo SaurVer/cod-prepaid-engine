@@ -302,7 +302,7 @@ export function ResultComparison({
       <div className="border-t border-line px-5 py-2.5 text-[11.5px] text-ink-faint">
         How profit per order is counted: delivered and paid in cash {inr(econ.margin - econ.cod_fee)} ({inr(econ.margin)} − {inr(econ.cod_fee)} cash fee) ·
         delivered and paid online {inr(econ.margin)} minus any discount · returned −{inr(econ.rto_cost)} · cancelled ₹0 · minus the message cost.
-        {replay && ' Replay: orders that later paid online on their own were left out (a payment can’t be undone), so the control group shows almost no online payments; both groups were still picked at random from the same orders.'}
+        {replay && ' Orders that later paid online on their own were left out (a payment can’t be undone), so the control group shows almost no online payments; both groups were still picked at random from the same orders.'}
       </div>
     </div>
   );

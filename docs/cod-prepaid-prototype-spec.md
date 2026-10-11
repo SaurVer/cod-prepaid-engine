@@ -7,6 +7,8 @@ Deadline: submission due 13 Oct 2026, 11:59 PM IST. **A working core loop beats 
 The part to protect at all costs:
 **live order flow → real model → real EV calculation → real LLM draft → merchant approval → simulated customer response → randomised control group → measured extra profit → Inspector explanation → retraining.**
 
+> **v4.6** — The word "replay" is not shown anywhere on screen: a campaign on a past day simply says its messages go out at 9 PM that day (the mechanics are unchanged). Orders page: **From / To date filter** next to the single-day filter (choosing one clears the other).
+
 > **v4.5** — Seeded history now has **campaigns on the oldest 23 days** (replayed at 9 PM with the fixed templates, control 10% / random test 10%, sent and fully played forward), and the **latest 7 days including today are left for the demo**. The "so far" estimate no longer over-counts cancellations (they are known at dispatch while deliveries trickle in): it uses the value of shipped orders known so far × the share not cancelled − message cost, and appears only once half of each group's deliveries are known. Single days can still come out negative because the control group is small; the 23-day total is clearly positive (≈ ₹2.5 lakh in a test seed).
 
 > **v4.4** — Extra profit vs control updates while a campaign is measuring: once each group has 20 known deliveries it shows an estimate marked “so far” (tile, day row, campaign strip), and the final number when every delivery is known. The explainer now works in totals, not averages: (1) control orders earned ₹X in total → ₹ per order; (2) without messages the AI's N orders would have earned N × that; (3) what they actually earned; extra profit = (3) − (2).

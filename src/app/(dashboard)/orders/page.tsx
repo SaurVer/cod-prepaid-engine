@@ -125,9 +125,15 @@ async function ByOrder({ sp, dates, qs }: { sp: Record<string, string | undefine
       <AutoForm className="card flex flex-wrap items-end gap-4 px-4 py-3">
         {sp.back && <input type="hidden" name="back" value={sp.back} />}
         <input type="hidden" name="page" value={sp.page ?? '1'} />
-        {!sp.date && sp.from && <input type="hidden" name="from" value={sp.from} />}
-        {!sp.date && sp.to && <input type="hidden" name="to" value={sp.to} />}
-        {sel('date', 'Day', [['', !sp.date && sp.from ? `${dayLabel(sp.from)} – ${dayLabel(sp.to ?? dates[0])}` : 'All days'], ...dates.map((d) => [d, `${weekday(d)} ${dayLabel(d)}`] as [string, string])])}
+        <label className="flex flex-col gap-1 text-[12px] text-ink-faint">
+          From
+          <input type="date" name="from" defaultValue={sp.date ? '' : (sp.from ?? '')} min={dates[dates.length - 1]} max={dates[0]} className="input py-1.5 text-[12.5px]" />
+        </label>
+        <label className="flex flex-col gap-1 text-[12px] text-ink-faint">
+          To
+          <input type="date" name="to" defaultValue={sp.date ? '' : (sp.to ?? '')} min={dates[dates.length - 1]} max={dates[0]} className="input py-1.5 text-[12.5px]" />
+        </label>
+        {sel('date', 'Or one day', [['', 'Any day'], ...dates.map((d) => [d, `${weekday(d)} ${dayLabel(d)}`] as [string, string])])}
         {sel('view', 'Show', VIEWS)}
         {sel('group', 'Campaign group', [
           ['', 'Any'],

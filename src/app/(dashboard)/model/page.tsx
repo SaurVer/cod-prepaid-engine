@@ -150,7 +150,6 @@ export default async function ModelPage() {
                     <Link className="link" href={`/model/runs/${d.run_id}`}>
                       {campaignName(d.created_at)}
                     </Link>
-                    {d.replay && <span className="ml-1.5 text-[11px] text-ink-faint">replay</span>}
                   </td>
                   <td>{dayLabel(d.date)}</td>
                   <td className="text-right">{num(d.scored)}</td>
