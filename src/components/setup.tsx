@@ -15,6 +15,9 @@ const STEPS: { key: string; label: string }[] = [
   { key: 'history-4', label: 'Last 30 days: days 16–20' },
   { key: 'history-5', label: 'Last 30 days: days 21–25' },
   { key: 'history-6', label: 'Last 30 days: days 26–29' },
+  { key: 'campaigns-1', label: 'Campaigns on the oldest 23 days (sent at 9 PM): part 1' },
+  { key: 'campaigns-2', label: 'Campaigns: part 2' },
+  { key: 'campaigns-3', label: 'Campaigns: part 3 (latest 7 days left for you)' },
   { key: 'today', label: "Today's orders so far (no campaign yet)" },
 ];
 

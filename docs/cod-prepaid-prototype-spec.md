@@ -7,6 +7,8 @@ Deadline: submission due 13 Oct 2026, 11:59 PM IST. **A working core loop beats 
 The part to protect at all costs:
 **live order flow → real model → real EV calculation → real LLM draft → merchant approval → simulated customer response → randomised control group → measured extra profit → Inspector explanation → retraining.**
 
+> **v4.5** — Seeded history now has **campaigns on the oldest 23 days** (replayed at 9 PM with the fixed templates, control 10% / random test 10%, sent and fully played forward), and the **latest 7 days including today are left for the demo**. The "so far" estimate no longer over-counts cancellations (they are known at dispatch while deliveries trickle in): it uses the value of shipped orders known so far × the share not cancelled − message cost, and appears only once half of each group's deliveries are known. Single days can still come out negative because the control group is small; the 23-day total is clearly positive (≈ ₹2.5 lakh in a test seed).
+
 > **v4.4** — Extra profit vs control updates while a campaign is measuring: once each group has 20 known deliveries it shows an estimate marked “so far” (tile, day row, campaign strip), and the final number when every delivery is known. The explainer now works in totals, not averages: (1) control orders earned ₹X in total → ₹ per order; (2) without messages the AI's N orders would have earned N × that; (3) what they actually earned; extra profit = (3) − (2).
 
 > **v4.3** — Campaign window, before sending: a **Send** checkbox on every drafted order, and two group toggles above the table (“AI-decided · 640 of 650”, “Random test · 98 of 100”) that tick or untick a whole group at once; unticked orders are kept but not sent (the Approve & send summary reflects it). Control-group orders never get a message. The orders table also shows the **order date and time**.
@@ -83,7 +85,7 @@ Secrets: `DATABASE_URL`, `ANTHROPIC_API_KEY`, `LLM_MODEL`, `SETUP_TOKEN`. Enviro
 **Real dates, Indian time (IST).** The dashboard always works on the real calendar. There is no "sim time", no Pause and no Advance.
 
 **History (seeded).** Setup creates the **last 30 days** of the store:
-- Days −29 … −1: full order days with **no campaigns**. Orders, self-switches to prepaid, cancellations, shipping and deliveries all happened as they would without any messages.
+- Days −29 … −7: full order days, each with a campaign sent at 9 PM (fixed templates, no LLM). Days −6 … −1: full order days with **no campaigns**, for the demo. Orders, self-switches to prepaid, cancellations, shipping and deliveries all happened as they would without any messages.
 - Today (day 0): orders keep arriving through the day. No campaign.
 - **Running a campaign on a past day (replay).** It takes that day's eligible orders placed before 9 PM IST that were never in a campaign and had not already paid online (a conversion can never be undone). Those orders are put back to how they were at 9 PM (not shipped, no outcome; customer history rolled back), the hard rules are checked at 9 PM that day, and they wait while the campaign is prepared. On send, messages count as sent at 9 PM that evening and the store is played forward to now: responses (realistic hours), conversions before dispatch, shipping, and delivery outcomes up to today. Drafts use the live LLM like any campaign. A day can be replayed once; then it shows as sent.
 - Before the 30 days: a 30-day randomised pilot (~15,000 orders) that trained model v1. It is visible on the Model page as training data, not on the Overview.

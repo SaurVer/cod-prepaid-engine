@@ -8,11 +8,16 @@ import { trainAndStore } from './model.ts';
 import { DAY, DEFAULTS, HOUR, MERCHANT_ID, addDays, istDate, istDayStart, messageCost } from './settings.ts';
 import { type NewOrder, customerStateFromRow, insertCustomers, insertOrders, resolveUntil } from './simulation.ts';
 import { fillDay } from './sync.ts';
+import { approveAndSend, createRun, processNext } from './pipeline.ts';
 
 export const SEED_STEPS = [
   'reset', 'customers', 'pilot-1', 'pilot-2', 'pilot-3', 'train',
-  'history-1', 'history-2', 'history-3', 'history-4', 'history-5', 'history-6', 'today',
+  'history-1', 'history-2', 'history-3', 'history-4', 'history-5', 'history-6',
+  'campaigns-1', 'campaigns-2', 'campaigns-3', 'today',
 ] as const;
+
+/** The latest days (including today) are left without a campaign, for the demo. */
+export const DEMO_DAYS = 7;
 export type SeedStep = (typeof SEED_STEPS)[number];
 
 export const SEED_STEP_LABELS: Record<SeedStep, string> = {
@@ -28,6 +33,9 @@ export const SEED_STEP_LABELS: Record<SeedStep, string> = {
   'history-4': 'Last 30 days: days 16–20',
   'history-5': 'Last 30 days: days 21–25',
   'history-6': 'Last 30 days: days 26–29',
+  'campaigns-1': 'Past campaigns (sent at 9 PM): oldest days, part 1',
+  'campaigns-2': 'Past campaigns: part 2',
+  'campaigns-3': 'Past campaigns: part 3',
   today: "Today's orders so far",
 };
 
@@ -233,6 +241,27 @@ export async function runSeedStep(db: Db, step: SeedStep, rng: Rng = defaultRng)
       for (let i = part * 5; i < Math.min(part * 5 + 5, DEFAULTS.history_days - 1); i++) days.push(addDays(historyStart, i));
       for (const d of days) await seedHistoryDay(db, d);
       return `${days.length} days of orders (${days[0]} to ${days[days.length - 1]})`;
+    }
+
+    case 'campaigns-1':
+    case 'campaigns-2':
+    case 'campaigns-3': {
+      // Campaigns on the oldest days (all but the latest DEMO_DAYS), replayed at 9 PM with fixed templates.
+      const n = DEFAULTS.history_days - DEMO_DAYS;
+      const part = Number(step.slice(-1)) - 1;
+      const per = Math.ceil(n / 3);
+      const dates: string[] = [];
+      for (let i = part * per; i < Math.min(n, (part + 1) * per); i++) dates.push(addDays(historyStart, i));
+      let sent = 0;
+      for (const d of dates) {
+        const run = await createRun(db, { date: d, role: 'owner' });
+        for (let i = 0; i < 50; i++) {
+          const r = await processNext(db, { chunk: 1500, template: true, quiet: true });
+          if (r.status === 'ready_for_review' || r.status === 'idle') break;
+        }
+        sent += (await approveAndSend(db, run.id, 'owner', { quiet: true })).sent;
+      }
+      return `${dates.length} campaigns, ${sent.toLocaleString('en-IN')} messages (${dates[0]} to ${dates[dates.length - 1]})`;
     }
 
     case 'today': {

@@ -185,6 +185,18 @@ export interface DaySummary {
   campaigns: DayCampaign[];
 }
 
+/**
+ * Estimate while deliveries are still arriving. Cancellations are all known at dispatch but deliveries
+ * trickle in, so a plain average of known orders over-weights cancellations. Instead: value of a shipped
+ * order (from those known) × share not cancelled − message cost. Shown only once half of each group is known.
+ */
+function soFar(m: any, h: any): number | null {
+  if (!m || !h || m.avg_shipped == null || h.avg_shipped == null) return null;
+  if (m.resolved < 0.5 * m.n || h.resolved < 0.5 * h.n) return null;
+  const per = (g: any) => Number(g.avg_shipped) * (1 - Number(g.cancelled) / Number(g.n)) - Number(g.avg_msg);
+  return (per(m) - per(h)) * m.n;
+}
+
 /** Per-campaign measured extra profit vs control, computed in SQL from resolved orders. */
 async function campaignStats(db: Db, runIds: number[]): Promise<Map<number, Omit<DayCampaign, 'id' | 'status' | 'created_at' | 'order_count' | 'progress' | 'eta_seconds' | 'replay' | 'holdout_pct' | 'explore_pct'>>> {
   const out = new Map();
@@ -201,6 +213,12 @@ async function campaignStats(db: Db, runIds: number[]): Promise<Map<number, Omit
                 when o.converted_at is not null then (r.settings_snapshot->>'margin')::numeric - o.discount_paid
                 else (r.settings_snapshot->>'margin')::numeric - (r.settings_snapshot->>'cod_fee')::numeric end
            - o.message_cost) filter (where o.final_outcome is not null) as total_value
+     , count(*) filter (where o.final_outcome = 'cancelled')::int as cancelled,
+       avg(case when o.final_outcome = 'rto' then -(r.settings_snapshot->>'rto_cost')::numeric
+                when o.converted_at is not null then (r.settings_snapshot->>'margin')::numeric - o.discount_paid
+                else (r.settings_snapshot->>'margin')::numeric - (r.settings_snapshot->>'cod_fee')::numeric end)
+         filter (where o.final_outcome in ('delivered', 'rto')) as avg_shipped,
+       avg(o.message_cost) as avg_msg
      from run_orders ro join orders o on o.id = ro.order_id join runs r on r.id = ro.run_id
      where ro.run_id = any($1::int[]) and ro.assignment_group in ('model', 'holdout')
      group by 1, 2`,
@@ -246,10 +264,7 @@ async function campaignStats(db: Db, runIds: number[]): Promise<Map<number, Omit
       control_total: Number(h?.total_value ?? 0),
       ai_resolved: m?.resolved ?? 0,
       control_resolved: h?.resolved ?? 0,
-      extra_so_far:
-        m && h && m.resolved >= 20 && h.resolved >= 20 && m.avg_value != null && h.avg_value != null
-          ? (Number(m.avg_value) - Number(h.avg_value)) * m.n
-          : null,
+      extra_so_far: soFar(m, h),
     });
   }
   return out;
