@@ -460,7 +460,7 @@ export function MessagesGrid({
                     className={h.column.getCanSort() ? 'cursor-pointer select-none' : ''}
                   >
                     {flexRender(h.column.columnDef.header, h.getContext())}
-                    {{ asc: ' ▲', desc: ' ▼' }[h.column.getIsSorted() as string] ?? ''}
+                    {(({ asc: ' ▲', desc: ' ▼' }) as Record<string, string>)[String(h.column.getIsSorted())] ?? ''}
                   </th>
                 ))}
               </tr>

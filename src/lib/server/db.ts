@@ -1,10 +1,11 @@
 // Thin data-access layer. Production: node-postgres pool over DATABASE_URL (Supabase pooler).
 // Local tests: PSQL_TEST_URL runs each statement through the psql CLI (no transactions).
 
-export type Row = Record<string, any>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Row = any;
 
 export interface Db {
-  query<T extends Row = Row>(sql: string, params?: unknown[]): Promise<T[]>;
+  query<T = Row>(sql: string, params?: unknown[]): Promise<T[]>;
   tx<T>(fn: (db: Db) => Promise<T>): Promise<T>;
 }
 
