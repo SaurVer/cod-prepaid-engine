@@ -157,6 +157,13 @@ export interface DayCampaign {
   control_profit: number | null;
   ai_n: number;
   control_n: number;
+  /** total profit of orders with a known outcome, and how many that is */
+  ai_total: number;
+  control_total: number;
+  ai_resolved: number;
+  control_resolved: number;
+  /** estimate from the deliveries known so far (null until each group has 20 known) */
+  extra_so_far: number | null;
   replay: boolean;
   holdout_pct: number;
   explore_pct: number;
@@ -188,7 +195,12 @@ async function campaignStats(db: Db, runIds: number[]): Promise<Map<number, Omit
                 when o.final_outcome = 'rto' then -(r.settings_snapshot->>'rto_cost')::numeric
                 when o.converted_at is not null then (r.settings_snapshot->>'margin')::numeric - o.discount_paid
                 else (r.settings_snapshot->>'margin')::numeric - (r.settings_snapshot->>'cod_fee')::numeric end
-           - o.message_cost) filter (where o.final_outcome is not null) as avg_value
+           - o.message_cost) filter (where o.final_outcome is not null) as avg_value,
+       sum(case when o.final_outcome = 'cancelled' then 0
+                when o.final_outcome = 'rto' then -(r.settings_snapshot->>'rto_cost')::numeric
+                when o.converted_at is not null then (r.settings_snapshot->>'margin')::numeric - o.discount_paid
+                else (r.settings_snapshot->>'margin')::numeric - (r.settings_snapshot->>'cod_fee')::numeric end
+           - o.message_cost) filter (where o.final_outcome is not null) as total_value
      from run_orders ro join orders o on o.id = ro.order_id join runs r on r.id = ro.run_id
      where ro.run_id = any($1::int[]) and ro.assignment_group in ('model', 'holdout')
      group by 1, 2`,
@@ -230,6 +242,14 @@ async function campaignStats(db: Db, runIds: number[]): Promise<Map<number, Omit
       control_profit: h?.avg_value == null ? null : Number(h.avg_value),
       ai_n: m?.n ?? 0,
       control_n: h?.n ?? 0,
+      ai_total: Number(m?.total_value ?? 0),
+      control_total: Number(h?.total_value ?? 0),
+      ai_resolved: m?.resolved ?? 0,
+      control_resolved: h?.resolved ?? 0,
+      extra_so_far:
+        m && h && m.resolved >= 20 && h.resolved >= 20 && m.avg_value != null && h.avg_value != null
+          ? (Number(m.avg_value) - Number(h.avg_value)) * m.n
+          : null,
     });
   }
   return out;

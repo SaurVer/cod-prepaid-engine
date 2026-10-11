@@ -99,10 +99,13 @@ export function ExtraProfitExplainer({
   example,
 }: {
   econ: Economics;
-  example?: { ai: number; control: number; n: number; total: number; label: string } | null;
+  example?: { aiTotal: number; aiN: number; ctlTotal: number; ctlN: number; label: string } | null;
 }) {
-  const ex = example ?? { ai: 272, control: 251, n: 740, total: (272 - 251) * 740, label: '' };
-  const gap = ex.ai - ex.control;
+  const ex = example ?? { aiTotal: 201207, aiN: 739, ctlTotal: 71301, ctlN: 284, label: '' };
+  const perCtl = ex.ctlTotal / ex.ctlN;
+  const without = Math.round(ex.aiN * perCtl);
+  const actual = Math.round(ex.aiTotal);
+  const extra = actual - without;
   const steps = [
     {
       t: 'Split the orders at random',
@@ -114,7 +117,7 @@ export function ExtraProfitExplainer({
     },
     {
       t: 'Compare what each order earned',
-      b: 'We work out the average money made per order in each group. The difference is what the messages added.',
+      b: 'The control group shows what an order earns with no message. We use it to work out what the AI’s orders would have earned without messages, and compare with what they actually earned.',
     },
   ];
   return (
@@ -138,18 +141,32 @@ export function ExtraProfitExplainer({
         <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ok">
           {example ? `Real example: ${example.label}` : 'Illustration (made-up numbers until a campaign is measured)'}
         </div>
-        <div className="mt-1.5 grid grid-cols-[1fr_auto] gap-x-6 gap-y-1 text-[13px]">
-          <span>Orders that got the AI&apos;s message earned, on average</span>
-          <b className="text-right tabular-nums">{inr(ex.ai, 2)} each</b>
-          <span>Orders that got nothing (control group) earned</span>
-          <b className="text-right tabular-nums">{inr(ex.control, 2)} each</b>
-          <span>So each message added</span>
-          <b className={`text-right tabular-nums ${gap >= 0 ? 'text-ok' : 'text-bad'}`}>{inr(gap, 2)} per order</b>
-          <span>
-            Across the {num(ex.n)} orders that got the AI&apos;s choice: {num(ex.n)} × {inr(gap, 2)}
-          </span>
-          <b className={`text-right tabular-nums ${ex.total >= 0 ? 'text-ok' : 'text-bad'}`}>= {inr(ex.total)} extra profit</b>
-        </div>
+        <ol className="mt-1.5 space-y-1.5 text-[13px]">
+          <li className="flex justify-between gap-6">
+            <span>
+              <b>1.</b> The {num(ex.ctlN)} control orders (sent nothing) earned {inr(ex.ctlTotal)} in total. Per order that is {inr(ex.ctlTotal)} ÷ {num(ex.ctlN)} =
+            </span>
+            <b className="shrink-0 tabular-nums">{inr(perCtl, 2)}</b>
+          </li>
+          <li className="flex justify-between gap-6">
+            <span>
+              <b>2.</b> Without messages, the {num(ex.aiN)} orders the AI handled would have earned about the same per order: {num(ex.aiN)} × {inr(perCtl, 2)} =
+            </span>
+            <b className="shrink-0 tabular-nums">{inr(without)}</b>
+          </li>
+          <li className="flex justify-between gap-6">
+            <span>
+              <b>3.</b> What those {num(ex.aiN)} orders actually earned, with the AI&apos;s messages
+            </span>
+            <b className="shrink-0 tabular-nums">{inr(actual)}</b>
+          </li>
+          <li className="flex justify-between gap-6 border-t border-ok/20 pt-1.5">
+            <span>
+              <b>Extra profit</b> = {inr(actual)} − {inr(without)}
+            </span>
+            <b className={`shrink-0 tabular-nums ${extra >= 0 ? 'text-ok' : 'text-bad'}`}>{inr(extra)}</b>
+          </li>
+        </ol>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -275,7 +292,8 @@ export function ResultComparison({
               {total >= 0 ? `The campaign earned ${inr(total)} more` : `The campaign earned ${inr(-total)} less`} than sending nothing would have.
             </b>{' '}
             <span className="text-ink-soft">
-              That is the profit gap per order ({inr(ai.realised_per_order, 2)} − {inr(control.realised_per_order, 2)}) × {num(ai.n)} AI-decided orders.
+              Without messages, the {num(ai.n)} orders would have earned about {num(ai.n)} × {inr(control.realised_per_order, 2)} (what a control order earned) ={' '}
+              {inr(ai.n * (control.realised_per_order ?? 0))}. With the messages they earned {inr(ai.n * (ai.realised_per_order ?? 0))}.
               {total < 0 && ' On this day the messages and discounts cost more than the extra online payments brought in.'}
             </span>
           </>

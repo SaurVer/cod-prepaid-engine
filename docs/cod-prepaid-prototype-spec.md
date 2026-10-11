@@ -7,6 +7,8 @@ Deadline: submission due 13 Oct 2026, 11:59 PM IST. **A working core loop beats 
 The part to protect at all costs:
 **live order flow → real model → real EV calculation → real LLM draft → merchant approval → simulated customer response → randomised control group → measured extra profit → Inspector explanation → retraining.**
 
+> **v4.4** — Extra profit vs control updates while a campaign is measuring: once each group has 20 known deliveries it shows an estimate marked “so far” (tile, day row, campaign strip), and the final number when every delivery is known. The explainer now works in totals, not averages: (1) control orders earned ₹X in total → ₹ per order; (2) without messages the AI's N orders would have earned N × that; (3) what they actually earned; extra profit = (3) − (2).
+
 > **v4.3** — Campaign window, before sending: a **Send** checkbox on every drafted order, and two group toggles above the table (“AI-decided · 640 of 650”, “Random test · 98 of 100”) that tick or untick a whole group at once; unticked orders are kept but not sent (the Approve & send summary reflects it). Control-group orders never get a message. The orders table also shows the **order date and time**.
 
 > **v4.2** — The "How?" explainer for extra profit vs control is rewritten for a layman: a medicine-trial analogy; three steps (split the orders at random → wait for the deliveries → compare what each order earned); a worked example using your most recent measured campaign ("Orders that got the AI's message earned ₹272 each; orders that got nothing earned ₹251; so each message added ₹21 × 739 orders = ₹15,677"), or clearly labelled made-up numbers if none is measured yet; what one order "earns" in plain words; and why we don't just count who paid online.

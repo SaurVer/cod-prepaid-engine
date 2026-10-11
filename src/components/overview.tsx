@@ -44,19 +44,24 @@ function badgeFor(d: DaySummary): { label: string; tone: 'green' | 'blue' | 'amb
   }
 }
 
-function extraProfit(d: DaySummary): { value: number | null; resolved: number; sent: boolean } {
+function extraProfit(d: DaySummary): { value: number | null; soFar: number | null; resolved: number; sent: boolean } {
   const sent = d.campaigns.filter((c) => c.status === 'sent');
-  if (!sent.length) return { value: null, resolved: 0, sent: false };
+  if (!sent.length) return { value: null, soFar: null, resolved: 0, sent: false };
   const resolved = sent.reduce((a, c) => a + c.resolved_share, 0) / sent.length;
-  if (sent.some((c) => c.extra_total == null)) return { value: null, resolved, sent: true };
-  return { value: sent.reduce((a, c) => a + (c.extra_total ?? 0), 0), resolved, sent: true };
+  if (sent.some((c) => c.extra_total == null)) {
+    const est = sent.every((c) => c.extra_total != null || c.extra_so_far != null)
+      ? sent.reduce((a, c) => a + (c.extra_total ?? c.extra_so_far ?? 0), 0)
+      : null;
+    return { value: null, soFar: est, resolved, sent: true };
+  }
+  return { value: sent.reduce((a, c) => a + (c.extra_total ?? 0), 0), soFar: null, resolved, sent: true };
 }
 
 /** The most recent fully measured campaign, used as the worked example in the explainer. */
 function latestMeasured(days: DaySummary[]) {
   for (const d of days) {
     const c = d.campaigns.find((x) => x.status === 'sent' && x.extra_total != null && x.ai_profit != null && x.control_profit != null);
-    if (c) return { ai: c.ai_profit!, control: c.control_profit!, n: c.ai_n, total: c.extra_total!, label: `your campaign on ${dayLabel(d.date)}` };
+    if (c) return { aiTotal: c.ai_total, aiN: c.ai_n, ctlTotal: c.control_total, ctlN: c.control_n, label: `your campaign on ${dayLabel(d.date)}` };
   }
   return null;
 }
@@ -214,6 +219,7 @@ export function OverviewClient({
       extra: measured.reduce((a, d) => a + (extraProfit(d).value ?? 0), 0),
       measuredDays: measured.length,
       measuringDays: inRange.filter((d) => extraProfit(d).sent && extraProfit(d).value == null).length,
+      soFar: inRange.reduce((a, d) => a + (extraProfit(d).soFar ?? 0), 0),
       from: inRange[inRange.length - 1]?.date,
       to: inRange[0]?.date,
     };
@@ -291,9 +297,11 @@ export function OverviewClient({
                 {explain ? 'Hide' : 'How?'}
               </button>
             </div>
-            <div className={`metric mt-1.5 ${glance.extra >= 0 ? 'text-ok' : 'text-bad'}`}>{inr(glance.extra)}</div>
+            <div className={`metric mt-1.5 ${glance.extra + glance.soFar >= 0 ? 'text-ok' : 'text-bad'}`}>{inr(glance.extra + glance.soFar)}</div>
             <div className="mt-1 text-[12px] text-ink-faint">
-              {glance.measuredDays} day{glance.measuredDays === 1 ? '' : 's'} measured{glance.measuringDays > 0 && ` · ${glance.measuringDays} measuring`}
+              {glance.measuringDays > 0
+                ? `${inr(glance.extra)} final · ${inr(glance.soFar)} so far from ${glance.measuringDays} day${glance.measuringDays === 1 ? '' : 's'} still measuring`
+                : `${glance.measuredDays} day${glance.measuredDays === 1 ? '' : 's'} measured`}
             </div>
           </div>
         </div>
@@ -355,7 +363,10 @@ export function OverviewClient({
                 {ep.value != null ? (
                   <span className={ep.value >= 0 ? 'font-medium text-ok' : 'font-medium text-bad'}>{inr(ep.value)}</span>
                 ) : ep.sent ? (
-                  <span className="text-ink-faint">Measuring · {pct(ep.resolved, 0)}</span>
+                  <span className="text-ink-faint">
+                    {ep.soFar != null ? `≈ ${inr(ep.soFar)} so far · ` : 'Measuring · '}
+                    {pct(ep.resolved, 0)} known
+                  </span>
                 ) : (
                   '—'
                 )}
@@ -404,7 +415,7 @@ function CampaignSummary({ c, back }: { c: DayCampaign; back: string }) {
           ['Opened', num(c.opened)],
           ['Clicked', num(c.clicked)],
           ['Paid online', num(c.paid_online)],
-          ['Extra profit vs control', c.extra_total == null ? `Measuring · ${pct(c.resolved_share, 0)}` : inr(c.extra_total)],
+          ['Extra profit vs control', c.extra_total != null ? inr(c.extra_total) : c.extra_so_far != null ? `≈ ${inr(c.extra_so_far)} so far` : `Measuring · ${pct(c.resolved_share, 0)}`],
         ].map(([l, v]) => (
           <div key={l}>
             <div className="text-ink-faint">{l}</div>
