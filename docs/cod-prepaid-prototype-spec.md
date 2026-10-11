@@ -7,7 +7,7 @@ Deadline: submission due 13 Oct 2026, 11:59 PM IST. **A working core loop beats 
 The part to protect at all costs:
 **live order flow → real model → real EV calculation → real LLM draft → merchant approval → simulated customer response → randomised control group → measured extra profit → Inspector explanation → retraining.**
 
-> **v4.7** — Overview banner: a looping animation (CSS, no video file) of one COD order turning prepaid — order placed on COD → AI reminder on WhatsApp → customer taps the pay link → pays by UPI, order now prepaid — with the four steps captioned alongside, the current one highlighted.
+> **v4.7** — Overview banner: a wordless looping animation (CSS, no video file) on a phone: order confirmed on COD → WhatsApp reminder → tap “Pay online” → Razorpay Checkout (UPI apps, cards, netbanking, wallet) → pick UPI → tap Pay → paid, order now prepaid. A tap marker shows each touch; progress dots instead of captions; one line of copy: “COD in. Prepaid out.”
 
 > **v4.6** — The word "replay" is not shown anywhere on screen: a campaign on a past day simply says its messages go out at 9 PM that day (the mechanics are unchanged). Orders page: **From / To date filter** next to the single-day filter (choosing one clears the other).
 
