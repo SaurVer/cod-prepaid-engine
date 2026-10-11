@@ -90,47 +90,97 @@ export interface Economics {
   discount_amount: number;
 }
 
-/** How “Extra profit vs control” is worked out; fills in the numbers when a campaign is measured. */
+/**
+ * How “Extra profit vs control” is worked out, for someone with no stats background.
+ * Uses a real measured campaign as the example when there is one.
+ */
 export function ExtraProfitExplainer({
   econ,
-  ai,
-  control,
-  n,
-  total,
+  example,
 }: {
   econ: Economics;
-  ai?: number | null;
-  control?: number | null;
-  n?: number;
-  total?: number | null;
+  example?: { ai: number; control: number; n: number; total: number; label: string } | null;
 }) {
-  const filled = ai != null && control != null && n != null && total != null;
+  const ex = example ?? { ai: 272, control: 251, n: 740, total: (272 - 251) * 740, label: '' };
+  const gap = ex.ai - ex.control;
+  const steps = [
+    {
+      t: 'Split the orders at random',
+      b: 'Before anything is sent, a few orders are picked at random and get no message at all. This is the control group. Everyone else gets what the AI chose.',
+    },
+    {
+      t: 'Wait for the deliveries',
+      b: 'A few days later we know what happened to every order: delivered, returned or cancelled, paid in cash or online.',
+    },
+    {
+      t: 'Compare what each order earned',
+      b: 'We work out the average money made per order in each group. The difference is what the messages added.',
+    },
+  ];
   return (
-    <div className="space-y-3 text-[12.5px] leading-relaxed text-ink-soft">
-      <div className="rounded-lg bg-panel px-3.5 py-3 font-medium text-ink">
-        Extra profit vs control = (profit per order, AI-decided − profit per order, control group) × AI-decided orders
-        {filled && (
-          <div className="mt-1.5 font-semibold tabular-nums text-ok">
-            = ({inr(ai, 2)} − {inr(control, 2)}) × {num(n)} = {inr(total)}
-          </div>
-        )}
-      </div>
-      <div>
-        <b className="text-ink">Profit per order</b> is what an order actually earned once its delivery is known:
-        <ul className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 text-[12px]">
-          <li>Delivered, paid cash: {inr(econ.margin)} − {inr(econ.cod_fee)} cash fee</li>
-          <li>Delivered, paid online: {inr(econ.margin)} − any discount</li>
-          <li>Returned (RTO): −{inr(econ.rto_cost)}</li>
-          <li>Cancelled: ₹0</li>
-        </ul>
-        <span className="text-[12px]">Message costs are subtracted from every messaged order.</span>
-      </div>
+    <div className="space-y-4 text-[13px] leading-relaxed text-ink-soft">
       <p>
-        <b className="text-ink">Why compare with the control group?</b> Some customers pay online, cancel or return no matter what. The control group is picked at
-        random from the same orders and gets no message, so the gap between the two groups is what the messages caused, not luck or a good day.
+        It is like a medicine trial: one group gets the medicine, a similar group doesn&apos;t, and you compare. Here the “medicine” is the message.
       </p>
-      <p className="text-[11.5px] text-ink-faint">
-        It shows “Measuring” until every order’s delivery is known (3–5 days after dispatch). Random-test orders are left out: they are for training.
+      <ol className="grid grid-cols-3 gap-3">
+        {steps.map((st, i) => (
+          <li key={st.t} className="rounded-lg bg-panel px-4 py-3">
+            <div className="flex items-center gap-2 font-semibold text-ink">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-rzp text-[11px] text-white">{i + 1}</span>
+              {st.t}
+            </div>
+            <p className="mt-1 text-[12.5px]">{st.b}</p>
+          </li>
+        ))}
+      </ol>
+
+      <div className="rounded-lg border border-ok/25 bg-ok-soft px-4 py-3 text-ink">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ok">
+          {example ? `Real example: ${example.label}` : 'Illustration (made-up numbers until a campaign is measured)'}
+        </div>
+        <div className="mt-1.5 grid grid-cols-[1fr_auto] gap-x-6 gap-y-1 text-[13px]">
+          <span>Orders that got the AI&apos;s message earned, on average</span>
+          <b className="text-right tabular-nums">{inr(ex.ai)} each</b>
+          <span>Orders that got nothing (control group) earned</span>
+          <b className="text-right tabular-nums">{inr(ex.control)} each</b>
+          <span>So each message added</span>
+          <b className={`text-right tabular-nums ${gap >= 0 ? 'text-ok' : 'text-bad'}`}>{inr(gap)} per order</b>
+          <span>
+            Across the {num(ex.n)} orders that got the AI&apos;s choice: {num(ex.n)} × {inr(gap)}
+          </span>
+          <b className={`text-right tabular-nums ${ex.total >= 0 ? 'text-ok' : 'text-bad'}`}>= {inr(ex.total)} extra profit</b>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <div className="font-semibold text-ink">What one order “earns”</div>
+          <ul className="mt-1 space-y-0.5 text-[12.5px]">
+            <li>
+              Delivered, paid in cash: you keep <b className="text-ink">{inr(econ.margin - econ.cod_fee)}</b> ({inr(econ.margin)} profit − {inr(econ.cod_fee)} cash-handling
+              fee)
+            </li>
+            <li>
+              Delivered, paid online: you keep <b className="text-ink">{inr(econ.margin)}</b>, or {inr(econ.margin - econ.discount_amount)} if they used the{' '}
+              {inr(econ.discount_amount)} off offer
+            </li>
+            <li>
+              Sent back to you (RTO): you lose <b className="text-ink">{inr(econ.rto_cost)}</b> in shipping and handling
+            </li>
+            <li>Cancelled before shipping: ₹0</li>
+            <li>Each message sent also costs a little (₹1 on WhatsApp)</li>
+          </ul>
+        </div>
+        <div>
+          <div className="font-semibold text-ink">Why not just count who paid online?</div>
+          <p className="mt-1 text-[12.5px]">
+            Some customers would have paid online, cancelled or sent the order back anyway. Both groups come from the same day&apos;s orders and are split at
+            random, so the only real difference between them is the message. The gap in earnings is what the message caused, not luck or a good day.
+          </p>
+        </div>
+      </div>
+      <p className="text-[12px] text-ink-faint">
+        The number shows “Measuring” for 3–5 days, until every order&apos;s delivery is known. Orders in the random test (used only to teach the AI) are not counted.
       </p>
     </div>
   );

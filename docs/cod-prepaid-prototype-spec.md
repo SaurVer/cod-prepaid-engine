@@ -7,6 +7,8 @@ Deadline: submission due 13 Oct 2026, 11:59 PM IST. **A working core loop beats 
 The part to protect at all costs:
 **live order flow → real model → real EV calculation → real LLM draft → merchant approval → simulated customer response → randomised control group → measured extra profit → Inspector explanation → retraining.**
 
+> **v4.2** — The "How?" explainer for extra profit vs control is rewritten for a layman: a medicine-trial analogy; three steps (split the orders at random → wait for the deliveries → compare what each order earned); a worked example using your most recent measured campaign ("Orders that got the AI's message earned ₹272 each; orders that got nothing earned ₹251; so each message added ₹21 × 739 orders = ₹15,677"), or clearly labelled made-up numbers if none is measured yet; what one order "earns" in plain words; and why we don't just count who paid online.
+
 > **v4.1** — The days calendar is replaced by a single **filter bar of dropdowns**: Period (Last 7 / 14 / 30 days / Custom range with from–to), Campaign status (All days / Campaign sent / Not run yet) and **Go to a day** (every one of the last 30 days, labelled with its status and extra profit). Totals and the orders-per-day chart sit below it, then the day list.
 
 > **What changed in v4** (third merchant review):
@@ -145,7 +147,7 @@ Unchanged from v1: **Score** (8 logistic regressions → `predictions`), **Decid
 - **Header:** "Overview", one line on what the page is, **Refresh** ("Updated 5:42 PM"). No marketing hero; the product name lives in the top bar.
 - **Today so far:** orders, COD orders, orders ready for a campaign, COD cost at stake, and the next action (Run today's campaign · Campaign running · Review & send), plus "Open today".
 - **Filter bar** (dropdowns): **Period** — Last 7 / 14 / 30 days or Custom range (from–to date pickers within the last 30 days); **Campaign status** — All days / Campaign sent / Not run yet; **Go to a day** — any of the last 30 days, each labelled with its status ("Not run yet", "Campaign sent", "Ready to review"…) and extra profit when measured; choosing one widens the period if needed, opens that day in the list and scrolls to it. A count shows how many days are listed.
-- **Totals for the period:** COD orders, orders messaged, paid online after a message (each opens Orders filtered to the period), extra profit vs control with a "How?" explainer; orders-per-day chart.
+- **Totals for the period:** COD orders, orders messaged, paid online after a message (each opens Orders filtered to the period), extra profit vs control with a "How?" explainer ("How we know a campaign made you money", see v4.2); orders-per-day chart.
 - **Day by day** list for the period and status chosen. **No day is open on landing.** The expanded day is visibly different (blue band, accent bar, raised card). Expanded day: clickable tiles, COD cost at stake, campaign block (Run campaign → progress → Review & send → result strip with the filled-in equation).
 - **State is kept:** the open day, range and filter are in the URL and remembered for the browser session, so leaving for a campaign and coming back reopens the same day.
 - **Run campaign** opens the dialog (control % and random test %), starts the campaign and **stays on the Overview**; a toast links to the campaign window.

@@ -52,6 +52,15 @@ function extraProfit(d: DaySummary): { value: number | null; resolved: number; s
   return { value: sent.reduce((a, c) => a + (c.extra_total ?? 0), 0), resolved, sent: true };
 }
 
+/** The most recent fully measured campaign, used as the worked example in the explainer. */
+function latestMeasured(days: DaySummary[]) {
+  for (const d of days) {
+    const c = d.campaigns.find((x) => x.status === 'sent' && x.extra_total != null && x.ai_profit != null && x.control_profit != null);
+    if (c) return { ai: c.ai_profit!, control: c.control_profit!, n: c.ai_n, total: c.extra_total!, label: `your campaign on ${dayLabel(d.date)}` };
+  }
+  return null;
+}
+
 function costFor(cost: CostInputs, orders: number) {
   const gap = Math.max(0, cost.cod_rto_rate - cost.prepaid_rto_rate);
   const cash = orders * cost.cod_fee;
@@ -298,8 +307,8 @@ export function OverviewClient({
       </div>
       {explain && (
         <div className="card px-5 py-4">
-          <h2 className="mb-2">How “Extra profit vs control” is worked out</h2>
-          <ExtraProfitExplainer econ={cost} />
+          <h2 className="mb-2">How we know a campaign made you money</h2>
+          <ExtraProfitExplainer econ={cost} example={latestMeasured(days)} />
         </div>
       )}
 
