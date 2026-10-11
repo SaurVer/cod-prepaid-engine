@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { MODEL_NAME } from '@/lib/model-labels';
 import { api, useLive } from './live';
 
 export function RetrainButton({ recommended }: { recommended: boolean }) {
@@ -20,7 +21,7 @@ export function RetrainButton({ recommended }: { recommended: boolean }) {
           json: { action: 'step' },
         });
         if (r.status === 'done') {
-          toast(`Model v${r.version} trained. Compare it below, then promote it if it's better.`, 'success');
+          toast(`Model v${r.version} is trained. Compare it with the current model, then switch if it's better.`, 'success');
           break;
         }
         if (r.status === 'idle') break;
@@ -37,7 +38,7 @@ export function RetrainButton({ recommended }: { recommended: boolean }) {
     return (
       <div className="w-72">
         <div className="mb-1 flex justify-between text-[12px] text-ink-soft">
-          <span>Training {step.trained ? `· ${step.trained.replace(/_/g, ' ')}` : '…'}</span>
+          <span>Training {step.trained ? `· ${MODEL_NAME[step.trained] ?? step.trained}` : '…'}</span>
           <span>
             {step.step}/{step.total}
           </span>
@@ -51,7 +52,7 @@ export function RetrainButton({ recommended }: { recommended: boolean }) {
   if (confirming) {
     return (
       <div className="flex items-center gap-2 rounded-lg border border-rzp/30 bg-rzp-faint px-3 py-2 text-[12.5px]">
-        Train a new candidate on all control and random-test outcomes?
+        Train a new version on all learning examples so far? The current model keeps running until you switch.
         <button className="btn btn-sm btn-primary" onClick={run}>
           Train
         </button>
@@ -63,7 +64,7 @@ export function RetrainButton({ recommended }: { recommended: boolean }) {
   }
   return (
     <button className={`btn ${recommended ? 'btn-primary' : ''}`} onClick={() => setConfirming(true)}>
-      Retrain model
+      {recommended ? 'Retrain now' : 'Retrain model'}
     </button>
   );
 }
@@ -73,11 +74,11 @@ export function PromoteButton({ version }: { version: number }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  if (state?.role !== 'owner') return <span className="text-[12px] text-ink-faint">Only the Owner can promote</span>;
+  if (state?.role !== 'owner') return <span className="text-[12px] text-ink-faint">Only the Owner can switch models</span>;
   if (!confirming)
     return (
       <button className="btn btn-primary btn-sm" onClick={() => setConfirming(true)}>
-        Promote v{version}
+        Switch to v{version}
       </button>
     );
   return (

@@ -131,8 +131,8 @@ export function CampaignGrid({ runId, editable, rows: initialRows, initialAction
         id: 'inspect',
         header: '',
         cell: ({ row }) => (
-          <a href={`/inspector?run=${runId}&order=${row.original.order_id}`} target="_blank" className="text-[12px] font-medium text-rzp hover:underline">
-            Why? ↗
+          <a href={`/inspector?run=${runId}&order=${row.original.order_id}&back=${encodeURIComponent(`/campaigns/${runId}`)}`} className="text-[12px] font-medium text-rzp hover:underline">
+            Why? →
           </a>
         ),
       },

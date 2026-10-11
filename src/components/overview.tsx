@@ -61,6 +61,160 @@ function costFor(cost: CostInputs, orders: number) {
 
 const GRID = 'grid grid-cols-[160px_1fr_1fr_1fr_180px_1fr_1.2fr_28px] items-center gap-3';
 
+const KEY = 'payshift-overview';
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function shortInr(v: number): string {
+  const a = Math.abs(v);
+  const s = v < 0 ? '−' : '+';
+  if (a >= 100000) return `${s}₹${(a / 100000).toFixed(1)}L`;
+  if (a >= 1000) return `${s}₹${(a / 1000).toFixed(1)}k`;
+  return `${s}₹${Math.round(a)}`;
+}
+
+function addDaysKey(date: string, n: number): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+}
+
+/** Calendar of the last 30 days, Monday-first weeks. Each day shows its campaign status. */
+function Calendar({
+  days,
+  selected,
+  inRange,
+  onPick,
+}: {
+  days: DaySummary[];
+  selected: string | null;
+  inRange: Set<string>;
+  onPick: (date: string) => void;
+}) {
+  const byDate = new Map(days.map((d) => [d.date, d]));
+  const oldest = days[days.length - 1]?.date;
+  const newest = days[0]?.date;
+  if (!oldest || !newest) return null;
+  const dow = (d: string) => (new Date(`${d}T00:00:00Z`).getUTCDay() + 6) % 7; // Mon = 0
+  const start = addDaysKey(oldest, -dow(oldest));
+  const end = addDaysKey(newest, 6 - dow(newest));
+  const cells: string[] = [];
+  for (let d = start; d <= end; d = addDaysKey(d, 1)) cells.push(d);
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const month = (d: string) => MONTHS[Number(d.slice(5, 7)) - 1];
+  const label = month(oldest) === month(newest) ? `${month(newest)} ${newest.slice(0, 4)}` : `${month(oldest)} – ${month(newest)} ${newest.slice(0, 4)}`;
+  return (
+    <div>
+      <div className="mb-2 text-[12px] font-medium text-ink-soft">{label}</div>
+      <div className="grid grid-cols-7 gap-1.5">
+        {WEEKDAYS.map((w) => (
+          <div key={w} className="pb-0.5 text-center text-[10.5px] font-semibold uppercase tracking-[0.04em] text-ink-faint">
+            {w}
+          </div>
+        ))}
+        {cells.map((date) => {
+          const d = byDate.get(date);
+          if (!d) return <div key={date} className="h-[58px] rounded-lg" />;
+          const s = dayStatus(d);
+          const ep = extraProfit(d);
+          const active = selected === date;
+          const dim = !inRange.has(date);
+          const tag =
+            s === 'sent'
+              ? ep.value != null
+                ? { t: shortInr(ep.value), c: ep.value >= 0 ? 'text-ok' : 'text-bad' }
+                : { t: 'Measuring', c: 'text-ok' }
+              : s === 'open'
+                ? { t: d.past ? 'Not run' : 'Ready', c: 'text-warn' }
+                : s === 'running'
+                  ? { t: 'Running', c: 'text-rzp' }
+                  : s === 'review'
+                    ? { t: 'Review', c: 'text-[#6B4BD8]' }
+                    : s === 'live'
+                      ? { t: 'Live', c: 'text-rzp' }
+                      : { t: '—', c: 'text-ink-faint' };
+          const bar = { sent: 'bg-ok', open: 'bg-warn', running: 'bg-rzp', review: 'bg-[#6B4BD8]', live: 'bg-rzp', done: 'bg-line' }[s];
+          return (
+            <button
+              key={date}
+              onClick={() => onPick(date)}
+              title={`${weekday(date)} ${dayLabel(date)}`}
+              className={`relative flex h-[58px] flex-col items-start justify-between overflow-hidden rounded-lg border px-2 py-1.5 text-left transition-colors ${
+                active ? 'border-rzp bg-rzp text-white shadow-pop' : 'border-line bg-white hover:border-rzp/50'
+              } ${dim && !active ? 'opacity-45' : ''}`}
+            >
+              <span className={`absolute inset-x-0 top-0 h-[3px] ${active ? 'bg-white/60' : bar}`} />
+              <span className="flex w-full items-center justify-between">
+                <span className="text-[14px] font-semibold tabular-nums">{Number(date.slice(8))}</span>
+                {!d.past && <span className={`text-[9.5px] font-semibold uppercase ${active ? 'text-white/80' : 'text-rzp'}`}>Today</span>}
+              </span>
+              <span className={`text-[11px] font-medium tabular-nums ${active ? 'text-white/85' : tag.c}`}>{tag.t}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-faint">
+        {[
+          ['bg-warn', 'Not run yet'],
+          ['bg-ok', 'Campaign sent (extra profit)'],
+          ['bg-[#6B4BD8]', 'Ready to review'],
+          ['bg-rzp', 'Today / running'],
+        ].map(([c, l]) => (
+          <span key={l} className="flex items-center gap-1.5">
+            <span className={`h-2 w-2 rounded-sm ${c}`} />
+            {l}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Today at a glance, with the next action. */
+function TodayStrip({ d, cost, onOpen }: { d: DaySummary | undefined; cost: CostInputs; onOpen: () => void }) {
+  if (!d || d.past) return null;
+  const s = dayStatus(d);
+  const stake = costFor(cost, d.ready);
+  const review = d.campaigns.find((c) => c.status === 'ready_for_review');
+  const running = d.campaigns.find((c) => ACTIVE.includes(c.status));
+  return (
+    <div className="card flex flex-wrap items-center gap-x-8 gap-y-3 px-5 py-3.5">
+      <div>
+        <div className="label">Today so far</div>
+        <div className="mt-0.5 text-[13px] text-ink-soft">
+          <b className="text-ink">{num(d.total)}</b> orders · <b className="text-ink">{num(d.cod)}</b> cash on delivery ·{' '}
+          <b className="text-ink">{num(d.ready)}</b> ready for a campaign
+        </div>
+      </div>
+      {d.ready > 0 && (
+        <div>
+          <div className="label">At stake if they stay COD</div>
+          <div className="mt-0.5 text-[15px] font-semibold">{inr(stake.total)}</div>
+        </div>
+      )}
+      <div className="ml-auto flex items-center gap-2">
+        {running ? (
+          <Link href={`/campaigns/${running.id}`} className="btn">
+            Campaign running · {Math.round(running.progress)}%
+          </Link>
+        ) : review ? (
+          <Link href={`/campaigns/${review.id}`} className="btn btn-primary">
+            Review &amp; send today&apos;s campaign →
+          </Link>
+        ) : s === 'open' ? (
+          <RunCampaignButton
+            date={d.date}
+            ready={d.ready}
+            past={false}
+            defaults={{ holdout_pct: cost.holdout_pct, exploration_pct: cost.exploration_pct }}
+            label="Run today's campaign"
+          />
+        ) : null}
+        <button className="btn" onClick={onOpen}>
+          Open today
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function OverviewClient({
   days,
   cost,
@@ -76,13 +230,36 @@ export function OverviewClient({
   const [from, setFrom] = useState(initial.from && initial.from >= oldest ? initial.from : days[Math.min(6, days.length - 1)]?.date ?? oldest);
   const [to, setTo] = useState(initial.to && initial.to <= newest ? initial.to : newest);
   const [show, setShow] = useState<Show>((['all', 'sent', 'open'].includes(initial.show ?? '') ? initial.show : 'all') as Show);
-  const [selected, setSelected] = useState<string | null>(initial.date === 'none' ? null : (initial.date ?? newest ?? null));
+  const [selected, setSelected] = useState<string | null>(initial.date && initial.date !== 'none' ? initial.date : null);
   const [explain, setExplain] = useState(false);
+  const [restored, setRestored] = useState(false);
+
+  // Coming back to the Overview (no state in the URL): reopen what was open before.
+  useEffect(() => {
+    const hasUrlState = Boolean(initial.date || initial.range || initial.show);
+    if (!hasUrlState) {
+      try {
+        const saved = JSON.parse(sessionStorage.getItem(KEY) ?? 'null');
+        if (saved) {
+          if (['7', '14', '30', 'custom'].includes(saved.range)) setRange(saved.range);
+          if (saved.from) setFrom(saved.from);
+          if (saved.to) setTo(saved.to);
+          if (['all', 'sent', 'open'].includes(saved.show)) setShow(saved.show);
+          if (saved.selected && days.some((d) => d.date === saved.selected)) setSelected(saved.selected);
+        }
+      } catch {
+        /* storage unavailable */
+      }
+    }
+    setRestored(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const inRange = useMemo(
     () => (range === 'custom' ? days.filter((d) => d.date >= from && d.date <= to) : days.slice(0, Number(range))),
     [days, range, from, to],
   );
+  const inRangeSet = useMemo(() => new Set(inRange.map((d) => d.date)), [inRange]);
   const visible = useMemo(
     () =>
       inRange.filter((d) => {
@@ -107,9 +284,22 @@ export function OverviewClient({
     return q.toString();
   }, [range, from, to, show, selected]);
   useEffect(() => {
+    if (!restored) return;
     window.history.replaceState(window.history.state, '', `/?${query}`);
-  }, [query]);
+    try {
+      sessionStorage.setItem(KEY, JSON.stringify({ range, from, to, show, selected }));
+    } catch {
+      /* storage unavailable */
+    }
+  }, [query, restored, range, from, to, show, selected]);
   const back = encodeURIComponent(`/?${query}`);
+
+  const pick = (date: string) => {
+    if (!inRangeSet.has(date)) setRange('30');
+    setShow('all');
+    setSelected(date);
+    setTimeout(() => document.getElementById(`day-${date}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  };
 
   const glance = useMemo(() => {
     const measured = inRange.filter((d) => extraProfit(d).value != null);
@@ -125,18 +315,28 @@ export function OverviewClient({
     };
   }, [inRange]);
   const rangeQs = glance.from ? `&from=${glance.from}&to=${glance.to}` : '';
-  const rangeLabel = range === 'custom' ? `${dayLabel(glance.from)} – ${dayLabel(glance.to)}` : `${range} days`;
+  const rangeLabel = range === 'custom' ? `${dayLabel(glance.from)} – ${dayLabel(glance.to)}` : `last ${range} days`;
 
   const seg = (active: boolean) =>
     `rounded-md px-3 py-1 text-[12.5px] transition-colors ${active ? 'bg-white font-medium text-ink shadow-card' : 'text-ink-soft hover:text-ink'}`;
 
   return (
     <div className="space-y-5">
-      {/* Filters + date pills */}
-      <div className="card px-4 py-3.5">
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-          <div className="flex items-center gap-2">
-            <span className="label">Range</span>
+      <TodayStrip d={days[0]} cost={cost} onOpen={() => pick(newest)} />
+
+      <div className="grid grid-cols-12 gap-4">
+        {/* Calendar */}
+        <div className="card col-span-5 px-4 py-3.5">
+          <div className="mb-2 flex items-center justify-between">
+            <h2>Days</h2>
+            <span className="text-[12px] text-ink-faint">Click a day to open it</span>
+          </div>
+          <Calendar days={days} selected={open?.date ?? null} inRange={inRangeSet} onPick={pick} />
+        </div>
+
+        {/* Range, totals and trend */}
+        <div className="card col-span-7 px-4 py-3.5">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <div className="flex rounded-lg border border-line bg-panel p-0.5">
               {(['7', '14', '30'] as const).map((r) => (
                 <button key={r} className={seg(range === r)} onClick={() => setRange(r)}>
@@ -147,97 +347,40 @@ export function OverviewClient({
                 Custom
               </button>
             </div>
+            {range === 'custom' && (
+              <div className="flex items-center gap-1.5 text-[12.5px]">
+                <input type="date" className="input py-1" min={oldest} max={to} value={from} onChange={(e) => e.target.value && setFrom(e.target.value)} aria-label="From" />
+                <span className="text-ink-faint">to</span>
+                <input type="date" className="input py-1" min={from} max={newest} value={to} onChange={(e) => e.target.value && setTo(e.target.value)} aria-label="To" />
+              </div>
+            )}
           </div>
-          {range === 'custom' && (
-            <div className="flex items-center gap-2 text-[12.5px]">
-              <input
-                type="date"
-                className="input py-1"
-                min={oldest}
-                max={to}
-                value={from}
-                onChange={(e) => e.target.value && setFrom(e.target.value)}
-                aria-label="From"
-              />
-              <span className="text-ink-faint">to</span>
-              <input
-                type="date"
-                className="input py-1"
-                min={from}
-                max={newest}
-                value={to}
-                onChange={(e) => e.target.value && setTo(e.target.value)}
-                aria-label="To"
-              />
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            <span className="label">Show</span>
-            <div className="flex rounded-lg border border-line bg-panel p-0.5">
-              {(
-                [
-                  ['all', 'All days'],
-                  ['sent', 'Campaign sent'],
-                  ['open', 'Not run yet'],
-                ] as const
-              ).map(([k, l]) => (
-                <button key={k} className={seg(show === k)} onClick={() => setShow(k)}>
-                  {l}
+          <div className="mt-3 grid grid-cols-4 gap-3">
+            {[
+              { l: 'COD orders', v: num(glance.cod), href: `/orders?view=cod${rangeQs}&back=${back}` },
+              { l: 'Orders messaged', v: num(glance.messaged), href: `/orders?view=messaged${rangeQs}&back=${back}` },
+              { l: 'Paid online after a message', v: num(glance.paid), href: `/orders?view=paid${rangeQs}&back=${back}`, tone: 'text-rzp' },
+            ].map((t) => (
+              <Link key={t.l} href={t.href} className="group rounded-lg border border-line px-3 py-2.5 transition-colors hover:border-rzp/40">
+                <div className="text-[11px] font-medium text-ink-faint">{t.l}</div>
+                <div className={`mt-0.5 text-[20px] font-semibold tabular-nums ${t.tone ?? ''}`}>{t.v}</div>
+              </Link>
+            ))}
+            <div className="rounded-lg border border-line px-3 py-2.5">
+              <div className="flex items-center justify-between text-[11px] font-medium text-ink-faint">
+                Extra profit vs control
+                <button className="text-rzp hover:underline" onClick={() => setExplain((x) => !x)}>
+                  {explain ? 'Hide' : 'How?'}
                 </button>
-              ))}
+              </div>
+              <div className={`mt-0.5 text-[20px] font-semibold tabular-nums ${glance.extra >= 0 ? 'text-ok' : 'text-bad'}`}>{inr(glance.extra)}</div>
+              <div className="text-[11px] text-ink-faint">
+                {glance.measuredDays} day{glance.measuredDays === 1 ? '' : 's'} measured{glance.measuringDays > 0 && ` · ${glance.measuringDays} measuring`}
+              </div>
             </div>
           </div>
-          <span className="ml-auto text-[12px] text-ink-faint">
-            {visible.length} of {inRange.length} days
-          </span>
-        </div>
-        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-          {visible.map((d) => {
-            const s = dayStatus(d);
-            const active = open?.date === d.date;
-            const dot = { live: 'bg-rzp', sent: 'bg-ok', running: 'bg-rzp', review: 'bg-[#6B4BD8]', open: 'bg-warn', done: 'bg-ink-faint/40' }[s];
-            return (
-              <button
-                key={d.date}
-                onClick={() => setSelected(active ? null : d.date)}
-                className={`flex min-w-[76px] shrink-0 flex-col items-center rounded-xl border px-3 py-2 text-center transition-colors ${
-                  active ? 'border-rzp bg-rzp text-white shadow-pop' : 'border-line bg-white hover:border-rzp/40'
-                }`}
-              >
-                <span className={`text-[11px] ${active ? 'text-white/75' : 'text-ink-faint'}`}>{d.past ? weekday(d.date) : 'Today'}</span>
-                <span className="text-[14px] font-semibold">{dayLabel(d.date)}</span>
-                <span className={`mt-1 h-1.5 w-1.5 rounded-full ${active ? 'bg-white' : dot}`} />
-              </button>
-            );
-          })}
-          {visible.length === 0 && <div className="py-2 text-[13px] text-ink-faint">No days match this filter.</div>}
-        </div>
-      </div>
-
-      {/* At a glance */}
-      <div className="grid grid-cols-12 gap-4">
-        <div className="col-span-4 grid grid-cols-2 gap-4">
-          <Tile label={`COD orders · ${rangeLabel}`} value={num(glance.cod)} href={`/orders?view=cod${rangeQs}&back=${back}`} />
-          <Tile label="Orders messaged" value={num(glance.messaged)} href={`/orders?view=messaged${rangeQs}&back=${back}`} />
-          <Tile label="Paid online after a message" tone="blue" value={num(glance.paid)} href={`/orders?view=paid${rangeQs}&back=${back}`} />
-          <div className="card min-h-[104px] px-4 py-3.5">
-            <div className="flex items-center justify-between">
-              <span className="label">Extra profit vs control</span>
-              <button className="text-[11px] font-medium text-rzp hover:underline" onClick={() => setExplain((x) => !x)}>
-                {explain ? 'Hide' : 'How?'}
-              </button>
-            </div>
-            <div className="metric mt-1.5 text-ok">{inr(glance.extra)}</div>
-            <div className="mt-1 text-[12px] text-ink-faint">
-              {glance.measuredDays} day{glance.measuredDays === 1 ? '' : 's'} measured
-              {glance.measuringDays > 0 && ` · ${glance.measuringDays} measuring`}
-            </div>
-          </div>
-        </div>
-        <div className="card col-span-8 px-4 pb-2 pt-3.5">
-          <div className="mb-1 flex items-center justify-between">
-            <h2>Orders per day</h2>
-            <span className="text-[12px] text-ink-faint">{rangeLabel}</span>
+          <div className="mt-2 flex items-center justify-between">
+            <span className="text-[12px] font-medium text-ink-soft">Orders per day · {rangeLabel}</span>
           </div>
           <DailyChart data={inRange.slice().reverse().map((d) => ({ date: d.date, cod: d.cod, prepaid: d.prepaid, paid: d.paid_after_msg }))} />
         </div>
@@ -251,6 +394,24 @@ export function OverviewClient({
 
       {/* Day list */}
       <div className="card overflow-hidden">
+        <div className="flex items-center justify-between border-b border-line px-5 py-2.5">
+          <h2>
+            Day by day <span className="font-normal text-ink-faint">· {rangeLabel}</span>
+          </h2>
+          <div className="flex rounded-lg border border-line bg-panel p-0.5">
+            {(
+              [
+                ['all', 'All days'],
+                ['sent', 'Campaign sent'],
+                ['open', 'Not run yet'],
+              ] as const
+            ).map(([k, l]) => (
+              <button key={k} className={seg(show === k)} onClick={() => setShow(k)}>
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className={`${GRID} border-b border-line bg-panel px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.03em] text-ink-faint`}>
           <span>Day</span>
           <span className="text-right">Orders</span>
@@ -261,6 +422,7 @@ export function OverviewClient({
           <span className="text-right">Extra profit vs control</span>
           <span />
         </div>
+        {visible.length === 0 && <div className="px-5 py-6 text-[13px] text-ink-faint">No days match this filter.</div>}
         {visible.map((d) => {
           const isOpen = open?.date === d.date;
           const ep = extraProfit(d);
@@ -269,9 +431,7 @@ export function OverviewClient({
             <button
               onClick={() => setSelected(isOpen ? null : d.date)}
               aria-expanded={isOpen}
-              className={`${GRID} w-full px-5 py-3 text-left text-[13px] transition-colors ${
-                isOpen ? 'bg-rzp-soft' : 'hover:bg-rzp-faint'
-              }`}
+              className={`${GRID} w-full px-5 py-3 text-left text-[13px] transition-colors ${isOpen ? 'bg-rzp-soft' : 'hover:bg-rzp-faint'}`}
             >
               <span>
                 <span className={`font-semibold ${isOpen ? 'text-rzp' : ''}`}>{d.past ? weekday(d.date) : 'Today'}</span>
@@ -303,13 +463,13 @@ export function OverviewClient({
             </button>
           );
           return isOpen ? (
-            <div key={d.date} className="relative border-y-2 border-rzp/60 bg-rzp-faint shadow-pop">
+            <div key={d.date} id={`day-${d.date}`} className="relative scroll-mt-20 border-y-2 border-rzp/60 bg-rzp-faint shadow-pop">
               <span className="absolute inset-y-0 left-0 w-1 bg-rzp" />
               {row}
               <DayPanel d={d} cost={cost} back={back} />
             </div>
           ) : (
-            <div key={d.date} className="border-b border-line last:border-0">
+            <div key={d.date} id={`day-${d.date}`} className="scroll-mt-20 border-b border-line last:border-0">
               {row}
             </div>
           );

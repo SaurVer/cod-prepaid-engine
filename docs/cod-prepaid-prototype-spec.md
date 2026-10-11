@@ -1,4 +1,4 @@
-# Build spec: PayShift · COD-to-Prepaid Decision Engine (prototype) · v3
+# Build spec: PayShift · COD-to-Prepaid Decision Engine (prototype) · v4
 
 Concept prototype for the Razorpay AI PM Build Challenge, Track 2 ("Recover and Grow with AI"). Built on synthetic data. Every screen shows a small "Concept prototype · synthetic data" label.
 
@@ -6,6 +6,14 @@ Deadline: submission due 13 Oct 2026, 11:59 PM IST. **A working core loop beats 
 
 The part to protect at all costs:
 **live order flow → real model → real EV calculation → real LLM draft → merchant approval → simulated customer response → randomised control group → measured extra profit → Inspector explanation → retraining.**
+
+> **What changed in v4** (third merchant review):
+> 1. **Model page rebuilt around two questions.** (a) *Is it time to retrain?* — new learning examples since the last training, progress to the 1,500 threshold, how many more are waiting for deliveries, the model in use, Retrain, and a plain old-vs-new comparison with "Switch to vN". (b) *What did the model predict?* — one row per campaign, opening every order's chances and expected profit with plain column names ("Chance the customer pays online · Send nothing / Reminder / ₹50 offer"). Training data, parameters and accuracy move to a "Technical details" page for data teams.
+> 2. **Calculations in plain words.** Expected profit is shown as "Out of 100 orders like this one: 25 pay online and are delivered, ₹300 each…" with totals, on the Inspector and on each campaign's predictions page. One sentence says why the AI chose what it did.
+> 3. **Results after sending** are a plain table instead of a chart: AI-decided vs control (sent nothing), per 100 orders — paid online, cancelled, returned, profit per order — with the difference and a one-line verdict ("The campaign earned ₹X more than sending nothing would have").
+> 4. **Overview:** the marketing-style hero is replaced by a normal page header and a "Today so far" strip with the next action; date pills are replaced by a **calendar of the last 30 days** (each day shows Not run / Ready / Review / Running / the extra profit); no day opens by itself on landing; the opened day, range and filter are kept when you leave and come back.
+> 5. **Running a campaign keeps you on the Overview**: progress shows in the day and the top bar; a toast links to the campaign.
+> 6. **Inspector** opens in the same tab with a Back link (no new tab); its layout no longer overlaps.
 
 > **What changed in v3** (second merchant review):
 > 1. **Past days have orders but no campaigns.** You run them yourself. A campaign on a past day is a **replay**: it is treated as sent at 9 PM that evening, and when you send it, customer responses, shipping and deliveries up to now are filled in at once, so the result shows immediately (fully measured for days older than ~5 days).
@@ -118,7 +126,7 @@ Unchanged from v1: **Score** (8 logistic regressions → `predictions`), **Decid
 - **Razorpay theme:** Inter; navy text `#192839`, slate `#40566D`, muted `#768EA7`; primary blue `#305EFF` (hover `#2950DA`), blue tint `#E9F0FF`; page `#F8FAFC`; borders `#DFE3E9`; success `#009E5C`; danger `#F0263C`. Navy sidebar.
 - **Razorpay logo:** shown in the top bar and footer from `/public/razorpay-logo.svg` when the merchant adds the official file from Razorpay's brand kit; otherwise a "Razorpay" wordmark in brand blue.
 - **Merchant brand:** "Elvora" with its own original logo (gold leaf on a deep-green tile).
-- **Product brand:** "PayShift" with an original mark (two arrows on a blue tile) in the top bar and hero.
+- **Product brand:** "PayShift" with an original mark (two arrows on a blue tile) in the top bar.
 - Professional data-tool density: consistent card heights, 12–14 px UI text, tabular numbers.
 
 **Navigation (left):** Overview · Campaigns · Orders · Model · Settings. The Inspector is a separate site reached from any order.
@@ -132,13 +140,13 @@ Unchanged from v1: **Score** (8 logistic regressions → `predictions`), **Decid
 ## 7. Pages
 
 ### 7.1 Overview (home, date-first)
-- **Hero mast:** "PayShift · COD → Prepaid for Elvora", a one-line promise ("Turn cash-on-delivery orders into prepaid, only where it pays."), a two-sentence description, the four steps (Pick a day → AI scores & decides → You review & send → Measure vs control), **Refresh** and a link to how the AI decides.
-- **Filters:** range 7 / 14 / 30 days or **Custom** (from–to date pickers within the last 30 days); status All · Campaign sent · Not run yet. **Date pills** for the days that match (today open by default). All switching happens in the browser, instantly; the URL keeps the state.
-- **At a glance** for the range: COD orders, orders messaged, paid online after a message (each opens Orders filtered to the range), **extra profit vs control** with a "How?" toggle that shows the formula. Orders-per-day chart.
-- **Day list:** one row per date: orders, COD, eligible, campaign status (Ready for a campaign · Not run yet · Campaign running · Ready to review · Campaign sent / Replayed & sent · Orders arriving), paid online after a message, extra profit vs control (or "Measuring · x%"). Clicking a row or pill **expands** that day; the expanded day is visibly different (blue band, accent bar, raised card, highlighted chevron):
-  - Clickable tiles that open the Orders page pre-filtered, with a Back link.
-  - **COD cost at stake** in plain words.
-  - **Campaign block:** "N orders are ready" (today) or "N orders can be replayed" (past day, with the 9 PM explanation) → **Run campaign** dialog → the campaign window opens. While running: progress here and in the top bar. When ready: "Review & send →" opens the campaign window. After sending: a result strip with the extra-profit equation filled in, and "View results →".
+- **Header:** "Overview", one line on what the page is, **Refresh** ("Updated 5:42 PM"). No marketing hero; the product name lives in the top bar.
+- **Today so far:** orders, COD orders, orders ready for a campaign, COD cost at stake, and the next action (Run today's campaign · Campaign running · Review & send), plus "Open today".
+- **Days calendar** (left): the last 30 days in Monday-first weeks. Each day shows its date and status: *Not run* (past day), *Ready* (today), *Review*, *Running*, *Live*, or the measured extra profit (e.g. "+₹12.4k") once a campaign is sent, with a coloured top bar and a legend. Days outside the selected range are dimmed; clicking one widens the range. Clicking a day opens it in the list below and scrolls to it.
+- **Range and totals** (right): 7 / 14 / 30 days or Custom (from–to); COD orders, orders messaged, paid online after a message (each opens Orders filtered to the range), extra profit vs control with a "How?" explainer; orders-per-day chart.
+- **Day by day** list with a Show filter (All · Campaign sent · Not run yet). **No day is open on landing.** The expanded day is visibly different (blue band, accent bar, raised card). Expanded day: clickable tiles, COD cost at stake, campaign block (Run campaign → progress → Review & send → result strip with the filled-in equation).
+- **State is kept:** the open day, range and filter are in the URL and remembered for the browser session, so leaving for a campaign and coming back reopens the same day.
+- **Run campaign** opens the dialog (control % and random test %), starts the campaign and **stays on the Overview**; a toast links to the campaign window.
 
 ### 7.2 Campaigns (`/campaigns`)
 Every campaign ever run, newest first: name ("Campaign · 3 Oct, 9:00 PM"), order day, Live or Replay, status, orders, control (n · %), random test (n · %), AI-decided, messages sent, paid online, expected extra profit, extra profit vs control. Totals on top. Old `/day/...` links redirect here or to the Overview.
@@ -149,7 +157,7 @@ Every campaign ever run, newest first: name ("Campaign · 3 Oct, 9:00 PM"), orde
 - **Who got what, and why:** control group, random test and AI-decided with counts, what each got and what each is used for (measure / train / result).
 - Orders grid (edit messages before sending; edits logged).
 - **Approve & send** → pop-up summary (and, for a replay, a note that it counts as sent at 9 PM and is played forward) → **Confirm**. Owner only; an Analyst sees "Request approval".
-- After sending: funnel tiles, AI-decided vs control chart, and **How the extra profit is measured** with the filled-in equation. Link to the campaign's **Model outputs**.
+- After sending: funnel tiles and **Did the messages pay off?** — a table of AI-decided vs control group (sent nothing), per 100 orders: paid online, cancelled before shipping, returned (of shipped orders with a known outcome), profit per order, with the difference; then one verdict line ("The campaign earned ₹X more / less than sending nothing would have = (₹A − ₹B) × N orders", or "Still measuring: deliveries known for x of y"); then how profit per order is counted. Link to the campaign's **Model outputs**.
 
 ### 7.4 Results
 Per campaign: funnel (sent · delivered · opened · clicked · paid online), expected extra profit, extra profit vs control (total and per order; "Measuring" until delivery outcomes resolve), AI-decided vs control comparison for paid-online rate, cancellations and returns.
@@ -157,13 +165,12 @@ Per campaign: funnel (sent · delivered · opened · clicked · paid online), ex
 ### 7.5 Orders (data explorer)
 Every order in the database with filters (date, payment, eligibility, campaign group, status, used in training) and a by-day summary. Opened pre-filtered from Overview tiles with a back link. Each order links to the Inspector.
 
-### 7.6 Model (tabs)
-- **Top tiles:** active model; **training data available** (randomised orders with a known outcome: pilot · control · random test); new since last training ("Retrain recommended" past 1,500); what it predicts (12 chances per order from 8 small models). **Retrain** (progress shown) in the header.
-- **Summary:** how the AI decides (predict → price each action → pick), the training rule, version history.
-- **Training data:** counts by source; a table by source × action (orders, outcome known, paid-online %, cancelled %, returned % of shipped, not yet used); 15 sample rows exactly as the model sees them (inputs and labels); which rows each of the 8 models learns from.
-- **Parameters:** a weight table for the active model (inputs × the 8 models, colour-coded, plus intercepts), input scaling (average and spread) and training settings (iterations, learning rate, L2, split).
-- **Run outputs:** predicted vs actual paid-online chart; one row per sent campaign (order day, model, mix, messaged, predicted vs actual, AUC, expected extra profit). Clicking a day opens **`/model/runs/<id>`**: average predictions per action, a **worked example** (five outcomes × chance × profit for each action, gain vs no message), and every order's P / K / Rc / Rp, expected profit per action and decision, filterable by group and action, paginated.
-- **Accuracy:** active vs new model (AUC per model, predicted vs actual per action on held-out recent orders) and **Promote** (Owner, confirmation, logged).
+### 7.6 Model
+Two parts, in merchant language:
+1. **Keeping the model up to date.** "N new learning examples since the model was last trained", a progress bar to 1,500 ("Retrain recommended" when reached), how many more are waiting for deliveries, and what a learning example is (a control-group or random-test order whose delivery is known; the model learns only from orders the AI did not choose for). Right side: the model in use (version, trained when, on how many examples) and **Retrain**. When a new version is trained: "On recent orders neither model learned from, the predicted share paying online was off by x pts (current) and y pts (new). Smaller is better." → **Switch to vN** (Owner, confirmation, logged).
+2. **What the model predicted in each campaign.** One row per campaign (ready or sent): orders scored, how many the AI sent nothing / a reminder / the offer, expected vs actual share paying online. Each opens **`/model/runs/<id>`**: four tiles (orders scored; for each choice the average chance of paying online and profit per order), **one order worked through** ("Out of 100 orders like this one…" for each choice, plus a one-sentence reason), and a table of every order with plain column groups — *Chance the customer pays online* (Send nothing · Reminder · ₹50 offer), *Chance the customer cancels* (same), *Chance the order is returned* (If paid cash · If paid online), *Expected profit per order* (same three, best in green), *AI's choice*, *What happened* — filterable by group and choice, paginated.
+
+**Technical details** (`/model/details`, linked from the header, for data teams): training data by source and action with sample rows, the 8 models' weights and input scaling, and accuracy (AUC, predicted vs actual on held-out orders).
 
 ### 7.7 Settings
 Merchant profile; integrations (simulated); economics; experiment defaults (**control group %**, **random test %**, max sends, min gap) with the control / random test explainer; audit log.
@@ -171,7 +178,7 @@ Merchant profile; integrations (simulated); economics; experiment defaults (**co
 ---
 
 ## 8. Decision Inspector (separate site)
-Unchanged in content; plain labels. Order view: features as the model saw them, probabilities, five-outcome expected profit per action, why the chosen action won, LLM prompt/output/edits, events and outcome.
+Own layout, opened **in the same tab** from "Why? →" on any order, with **← Back** to where you came from. In plain words: (1) what we knew about the customer; (2) what the AI predicted — "Chance that… the customer pays online / cancels / the order is returned if paid in cash / if paid online" for each choice, in %; (3) what each choice is worth — "Out of 100 orders like this one" per choice, with each outcome's count, profit each and total, message cost, profit per order and the difference vs sending nothing; how the AI picks; (4) the message (prompt and raw output behind a toggle); (5) what happened, as a timeline. A one-sentence "Why reminder?" at the top.
 
 ---
 
@@ -183,6 +190,7 @@ Outcomes resolve in real time. Train only on control + random-test outcomes plus
 ## 10. Do not include
 - Confidence scores on recommendations; a monthly discount budget; the model recommending configuration changes; cross-merchant data; decisions for first-time customers or high-return-risk orders; checkout-time intervention; SMS or channel optimisation; LLM wording changing outcomes; real sending or real customer data; named Razorpay products other than "Razorpay"; fixed rule buckets presented as the decision logic; real authentication; pg_cron / Edge Functions / Realtime; claims of real-world accuracy.
 - **Removed in v2:** any simulated clock, Pause or Advance control in the UI; reset or re-seed controls inside the app.
+- **Removed in v4:** the Overview hero; date pills; the chart of AI-decided vs control; Summary / Parameters / Accuracy tabs on the main Model page (moved to Technical details); opening the Inspector in a new tab; automatic jump to the campaign after Run campaign; auto-opening today's row.
 - **Removed in v3:** pre-run campaigns in the seeded history; the separate day page; a Refresh button on every page.
 
 ---
@@ -196,12 +204,12 @@ Outcomes resolve in real time. Train only on control + random-test outcomes plus
 ---
 
 ## 12. "Done" for the 90-second video
-1. **Overview** — hero says what PayShift does; Refresh pulls new orders; open a past day: COD cost at stake. *(10 s)*
-2. **Run campaign** on a past day — dialog with control % and random test %, explained; progress with stage and ETA; "Campaign ready" notification. *(15 s)*
-3. **Review & send** in the campaign window — three decision cards; LLM drafts; edit one; **Approve & send** → pop-up → Confirm. Results appear at once: paid online, and extra profit vs control with its equation. *(25 s)*
-4. **Inspector** — one order: why the reminder beat the offer, step by step. *(10 s)*
-5. **Today** — run today's campaign; watch opens, clicks and payments arrive within minutes. *(15 s)*
-6. **Model** — training data available; parameters; a run's outputs; retrain; compare; promote. *(15 s)*
+1. **Overview** — Today strip; calendar; click a past day (e.g. 10 days ago): COD cost at stake. *(10 s)*
+2. **Run campaign** — dialog with control % and random test %; stay on the Overview while it runs; "Campaign ready" notification. *(15 s)*
+3. **Review & send** in the campaign window — three decision cards; edit a message; **Approve & send** → pop-up → Confirm → "Did the messages pay off?" table and verdict. *(25 s)*
+4. **Why? →** on an order — Inspector: "out of 100 orders like this one", why the reminder beat the offer; Back. *(15 s)*
+5. **Model** — new learning examples and the retrain recommendation; open the campaign's predictions; one order worked through. *(15 s)*
+6. **Today** — run today's campaign; responses arrive within minutes. *(10 s)*
 
 ---
 

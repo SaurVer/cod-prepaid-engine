@@ -186,8 +186,8 @@ async function ByOrder({ sp, dates, qs }: { sp: Record<string, string | undefine
                 <td className="text-[12px] text-ink-soft">{o.used_in_training_version ? `Model v${o.used_in_training_version}` : '—'}</td>
                 <td>
                   {o.run_id != null && (
-                    <a href={`/inspector?run=${o.run_id}&order=${o.id}`} target="_blank" className="text-[12px] font-medium text-rzp hover:underline">
-                      Why? ↗
+                    <a href={`/inspector?run=${o.run_id}&order=${o.id}&back=${encodeURIComponent(qs({}))}`} className="text-[12px] font-medium text-rzp hover:underline">
+                      Why? →
                     </a>
                   )}
                 </td>

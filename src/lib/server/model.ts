@@ -28,6 +28,15 @@ export async function trainingRows(db: Db): Promise<TrainingRow[]> {
   }));
 }
 
+/** Randomised orders (control + random test) from campaigns whose delivery is not known yet. */
+export async function countPendingRandomised(db: Db): Promise<number> {
+  const [r] = await db.query(
+    `select count(*)::int as n from run_orders ro join runs r on r.id = ro.run_id join orders o on o.id = ro.order_id
+     where ro.run_id > 0 and r.status in ('sent', 'closed') and ro.assignment_group in ('holdout', 'explore') and o.final_outcome is null`,
+  );
+  return Number(r.n);
+}
+
 export async function countNewRandomisedOutcomes(db: Db): Promise<number> {
   const [r] = await db.query(
     `select count(*)::int as n from run_orders ro join orders o on o.id = ro.order_id
@@ -99,6 +108,9 @@ export async function modelVersions(db: Db) {
 
 export interface DayDiagnostic {
   run_id: number;
+  status: string;
+  created_at: string;
+  replay: boolean;
   date: string;
   model_version: number;
   scored: number;
@@ -115,7 +127,8 @@ export interface DayDiagnostic {
 
 export async function dailyDiagnostics(db: Db): Promise<DayDiagnostic[]> {
   const runs = await db.query(
-    `select id, source_batch_ids, model_version from runs where not is_pilot and status in ('sent', 'closed') order by id`,
+    `select id, source_batch_ids, model_version, status, created_at, settings_snapshot from runs
+     where not is_pilot and status in ('ready_for_review', 'sent', 'closed') order by id`,
   );
   if (!runs.length) return [];
   const rows = await db.query(
@@ -133,11 +146,15 @@ export async function dailyDiagnostics(db: Db): Promise<DayDiagnostic[]> {
   return runs.map((r) => {
     const rs = rows.filter((x) => Number(x.run_id) === Number(r.id));
     const model = rs.filter((x) => x.assignment_group === 'model');
-    const sent = rs.filter((x) => x.sent);
+    const isSent = r.status !== 'ready_for_review';
+    const sent = isSent ? rs.filter((x) => x.sent) : rs.filter((x) => x.assignment_group !== 'holdout' && x.chosen_action !== 'none');
     const pOf = (x: any) => Number(x[`p_convert_${x.chosen_action}`]);
-    const closed = sent.length > 0 && sent.every((x) => x.dispatched || x.paid);
+    const closed = isSent && sent.length > 0 && sent.every((x) => x.dispatched || x.paid);
     return {
       run_id: Number(r.id),
+      status: r.status,
+      created_at: r.created_at,
+      replay: Boolean(r.settings_snapshot?.replay),
       date: r.source_batch_ids?.[0],
       model_version: Number(r.model_version),
       scored: rs.length,
@@ -146,7 +163,7 @@ export async function dailyDiagnostics(db: Db): Promise<DayDiagnostic[]> {
       discount: model.filter((x) => x.chosen_action === 'discount').length,
       sent: sent.length,
       predicted_paid: sent.length ? sent.reduce((a, x) => a + pOf(x), 0) / sent.length : null,
-      actual_paid: sent.length ? sent.filter((x) => x.paid).length / sent.length : null,
+      actual_paid: isSent && sent.length ? sent.filter((x) => x.paid).length / sent.length : null,
       window_closed: closed,
       auc: closed ? aucOf(sent.map(pOf), sent.map((x) => (x.paid ? 1 : 0))) : null,
       expected_gain: model.reduce(

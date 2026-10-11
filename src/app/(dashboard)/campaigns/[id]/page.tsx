@@ -2,8 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { CampaignProgress } from '@/components/campaign-actions';
 import { ApproveSend, CampaignGrid } from '@/components/campaign-grid';
-import { CompareBars } from '@/components/charts';
-import { ExtraProfitExplainer, GroupsExplainer } from '@/components/explain';
+import { GroupsExplainer, ResultComparison } from '@/components/explain';
 import { AutoRefresh, TrackResponses } from '@/components/live';
 import { ACTION_LONG, campaignName, dayLabel, inr, num, pct, STATUS_LABEL } from '@/lib/format';
 import { campaignDecisions } from '@/lib/server/campaign.ts';
@@ -111,42 +110,7 @@ export default async function CampaignPage({
               }
             />
           </div>
-          <div className="grid grid-cols-12 gap-4">
-            <div className="card col-span-7 px-4 pb-2 pt-3.5">
-              <div className="flex items-center justify-between">
-                <h2>AI-decided orders vs control group</h2>
-                <span className="text-[12px] text-ink-faint">
-                  {num(m.n)} AI-decided · {num(h.n)} control
-                </span>
-              </div>
-              <CompareBars
-                data={[
-                  { metric: 'Paid online', ai: m.conversion_rate, control: h.conversion_rate },
-                  { metric: 'Cancelled', ai: m.cancel_rate, control: h.cancel_rate },
-                  { metric: 'Returned (RTO)', ai: m.rto_rate, control: h.rto_rate },
-                ]}
-              />
-              {replay && (
-                <p className="pb-2 text-[11.5px] text-ink-faint">
-                  Replay: orders that later paid online on their own were left out (a payment can&apos;t be undone), so the control group shows almost no online
-                  payments. The comparison is still fair: both groups were picked at random from the same orders.
-                </p>
-              )}
-            </div>
-            <div className="card col-span-5 px-5 py-4 text-[13px]">
-              <h2 className="mb-2">How the extra profit is measured</h2>
-              <ExtraProfitExplainer
-                econ={econ}
-                ai={m.realised_per_order}
-                control={h.realised_per_order}
-                n={m.n}
-                total={res.realised_gain}
-              />
-              <p className="mt-2 text-[12px] text-ink-faint">
-                Deliveries known: {num(m.resolved + h.resolved)} of {num(m.n + h.n)} orders.
-              </p>
-            </div>
-          </div>
+          <ResultComparison ai={m} control={h} econ={econ} total={res.realised_gain} replay={replay} />
         </div>
       )}
 

@@ -9,7 +9,7 @@ export default function InspectorLayout({ children }: { children: React.ReactNod
       <header className="flex h-14 items-center gap-3 bg-rzp-navy px-6 text-white">
         <BrandMark size={26} />
         <span className="text-[14px] font-semibold">Decision Inspector</span>
-        <span className="text-[12px] text-white/55">Why the AI chose what it chose, step by step</span>
+        <span className="text-[12px] text-white/55">Why the AI chose what it did for one order, in plain numbers</span>
         <div className="ml-auto flex items-center gap-4">
           <ConceptLabel />
           <Link href="/" className="text-[12.5px] text-white/70 hover:text-white">

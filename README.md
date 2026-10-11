@@ -1,7 +1,7 @@
 # PayShift · COD-to-Prepaid Decision Engine
 
 Concept prototype for the Razorpay AI PM Build Challenge, Track 2. **Synthetic data, fictional merchant ("Elvora", Skin · Hair · Wellness).**
-Spec: [`docs/cod-prepaid-prototype-spec.md`](docs/cod-prepaid-prototype-spec.md) (v3).
+Spec: [`docs/cod-prepaid-prototype-spec.md`](docs/cod-prepaid-prototype-spec.md) (v4).
 
 **Live:** https://cod-prepaid-engine.vercel.app
 
@@ -18,10 +18,10 @@ approves, and a randomised control group measures the extra profit. Outcomes ret
 - **Control group** (no message; measures profit and trains the model) and **random test** (random reminder or offer; trains the model) sizes are set per campaign in the Run campaign dialog. Defaults are in Settings; the random test can be 0%.
 
 ## Where things are
-- **Overview** — hero, range (7/14/30/custom), filters, days. Open a day → Run campaign.
+- **Overview** — Today strip, a calendar of the last 30 days, range (7/14/30/custom), day list. Open a day → Run campaign (you stay on the Overview while it runs).
 - **Campaigns** — every campaign, and a dedicated window per campaign for review, Approve & send, and results.
 - **Orders** — every order, filterable; each links to the Inspector.
-- **Model** — training data available and what it looks like, model parameters, per-campaign run outputs (every order's predictions, expected profit per action and decision), accuracy, retrain and promote.
+- **Model** — new learning examples and when to retrain (retrain, compare, switch), and each campaign's predictions for every order in plain words. Training data, parameters and accuracy are under Technical details.
 - **Settings** — economics, control / random-test defaults, integrations, audit log.
 
 ## Reset everything (outside the app)
@@ -43,9 +43,9 @@ The app shows a "Razorpay" wordmark. To use the official logo, add the file from
 `public/razorpay-logo.svg` (or `.png`) and redeploy.
 
 ## 90-second video path
-1. **Overview**: the hero says what PayShift does → open a past day (e.g. 10 days ago) → COD cost at stake.
-2. **Run campaign** → dialog: control group % and random test %, with what each is for → **Start campaign** → the campaign window shows progress with stages and time left.
-3. **Review & send** → three decision cards (orders, expected extra profit, sample AI message) → edit one message → **Approve & send** → pop-up summary → **Confirm** → paid online and **extra profit vs control** appear at once, with the equation.
-4. **Why? ↗** on any order → Inspector: why the reminder beat the offer, step by step.
-5. Back to **Overview → Today** → run today's campaign → responses arrive within minutes.
-6. **Model** → training data available → Parameters → Run outputs → open the day you just ran → **Retrain model** → Accuracy → **Promote**.
+1. **Overview**: Today strip → click a past day in the calendar (e.g. 10 days ago) → COD cost at stake.
+2. **Run campaign** → set control group % and random test % → **Start campaign**; progress shows in the day and the top bar.
+3. **Review & send** in the campaign window → edit one message → **Approve & send** → **Confirm** → "Did the messages pay off?" fills in at once.
+4. **Why? →** on any order → Inspector: "out of 100 orders like this one", why the reminder beat the offer → Back.
+5. **Model** → new learning examples and the retrain recommendation → open the campaign's predictions → one order worked through.
+6. **Today** → run today's campaign → responses arrive within minutes.

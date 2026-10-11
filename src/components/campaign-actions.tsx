@@ -44,11 +44,13 @@ export function RunCampaignButton({
         method: 'POST',
         json: { date, holdout_pct: c, explore_pct: r },
       });
-      toast(`${res.name} started on ${num(res.orders)} orders. You can keep working; we'll tell you when it's ready.`, 'info');
+      toast(`${res.name} started on ${num(res.orders)} orders. Progress shows here; we'll tell you when it's ready to review.`, 'info', res.href);
+      setOpen(false);
       await refreshState();
-      router.push(res.href);
+      router.refresh();
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Could not start the campaign', 'error');
+    } finally {
       setBusy(false);
     }
   };

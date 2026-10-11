@@ -135,3 +135,107 @@ export function ExtraProfitExplainer({
     </div>
   );
 }
+
+interface Group {
+  n: number;
+  converted: number;
+  cancelled: number;
+  rto: number;
+  resolved: number;
+  realised_per_order: number | null;
+}
+
+/** After sending: the AI-decided orders next to the control group, per 100 orders, in plain words. */
+export function ResultComparison({
+  ai,
+  control,
+  econ,
+  total,
+  replay,
+}: {
+  ai: Group;
+  control: Group;
+  econ: Economics;
+  total: number | null;
+  replay: boolean;
+}) {
+  const per100 = (x: number, n: number) => (n ? (100 * x) / n : null);
+  const shipped = (g: Group) => g.resolved - g.cancelled;
+  const rows: { label: string; sub: string; a: number | null; c: number | null; money?: boolean; goodUp: boolean }[] = [
+    { label: 'Paid online', sub: 'out of 100 orders', a: per100(ai.converted, ai.n), c: per100(control.converted, control.n), goodUp: true },
+    { label: 'Cancelled before shipping', sub: 'out of 100 orders', a: per100(ai.cancelled, ai.n), c: per100(control.cancelled, control.n), goodUp: false },
+    {
+      label: 'Returned (RTO)',
+      sub: 'out of 100 shipped orders with a known outcome',
+      a: per100(ai.rto, shipped(ai)),
+      c: per100(control.rto, shipped(control)),
+      goodUp: false,
+    },
+    { label: 'Profit per order', sub: 'orders whose delivery is known', a: ai.realised_per_order, c: control.realised_per_order, money: true, goodUp: true },
+  ];
+  const fmt = (v: number | null, money?: boolean) => (v == null ? '—' : money ? inr(v, 2) : v.toFixed(1));
+  const known = ai.resolved + control.resolved;
+  const all = ai.n + control.n;
+  return (
+    <div className="card overflow-hidden">
+      <div className="border-b border-line px-5 py-3.5">
+        <h2>Did the messages pay off?</h2>
+        <p className="mt-0.5 text-[12.5px] text-ink-soft">
+          Orders the AI decided for, next to the control group, which was picked at random from the same orders and sent nothing.
+        </p>
+      </div>
+      <table className="w-full text-[13px]">
+        <thead>
+          <tr className="text-left text-[11px] uppercase tracking-[0.04em] text-ink-faint">
+            <th className="px-5 py-2 font-semibold" />
+            <th className="px-5 py-2 text-right font-semibold">AI-decided · {num(ai.n)} orders</th>
+            <th className="px-5 py-2 text-right font-semibold">Control, sent nothing · {num(control.n)} orders</th>
+            <th className="px-5 py-2 text-right font-semibold">Difference</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const d = r.a != null && r.c != null ? r.a - r.c : null;
+            const good = d == null || Math.abs(d) < 1e-9 ? null : (d > 0) === r.goodUp;
+            return (
+              <tr key={r.label} className="border-t border-line">
+                <td className="px-5 py-2.5">
+                  <div className="font-medium">{r.label}</div>
+                  <div className="text-[11.5px] text-ink-faint">{r.sub}</div>
+                </td>
+                <td className="px-5 py-2.5 text-right text-[15px] font-semibold tabular-nums">{fmt(r.a, r.money)}</td>
+                <td className="px-5 py-2.5 text-right text-[15px] tabular-nums text-ink-soft">{fmt(r.c, r.money)}</td>
+                <td className={`px-5 py-2.5 text-right font-semibold tabular-nums ${good == null ? 'text-ink-faint' : good ? 'text-ok' : 'text-bad'}`}>
+                  {d == null ? '—' : `${d > 0 ? '+' : d < 0 ? '−' : ''}${r.money ? inr(Math.abs(d), 2) : Math.abs(d).toFixed(1)}`}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div className={`border-t px-5 py-3.5 text-[13px] ${total == null ? 'border-line bg-panel/60' : total >= 0 ? 'border-ok/20 bg-ok-soft' : 'border-bad/20 bg-bad-soft'}`}>
+        {total == null ? (
+          <>
+            <b>Still measuring.</b> Deliveries are known for {num(known)} of {num(all)} orders; the final number appears when all are known (3–5 days after
+            shipping).
+          </>
+        ) : (
+          <>
+            <b className={total >= 0 ? 'text-ok' : 'text-bad'}>
+              {total >= 0 ? `The campaign earned ${inr(total)} more` : `The campaign earned ${inr(-total)} less`} than sending nothing would have.
+            </b>{' '}
+            <span className="text-ink-soft">
+              That is the profit gap per order ({inr(ai.realised_per_order, 2)} − {inr(control.realised_per_order, 2)}) × {num(ai.n)} AI-decided orders.
+              {total < 0 && ' On this day the messages and discounts cost more than the extra online payments brought in.'}
+            </span>
+          </>
+        )}
+      </div>
+      <div className="border-t border-line px-5 py-2.5 text-[11.5px] text-ink-faint">
+        How profit per order is counted: delivered and paid in cash {inr(econ.margin - econ.cod_fee)} ({inr(econ.margin)} − {inr(econ.cod_fee)} cash fee) ·
+        delivered and paid online {inr(econ.margin)} minus any discount · returned −{inr(econ.rto_cost)} · cancelled ₹0 · minus the message cost.
+        {replay && ' Replay: orders that later paid online on their own were left out (a payment can’t be undone), so the control group shows almost no online payments; both groups were still picked at random from the same orders.'}
+      </div>
+    </div>
+  );
+}

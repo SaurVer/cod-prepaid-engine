@@ -1,14 +1,19 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { ProfitBreakdown, decisionSentence } from '@/components/profit-breakdown';
 import { ACTION_TONE, Badge, GROUP_TONE, PageHeader, Tile } from '@/components/ui';
-import { OUTCOME_LABELS } from '@/lib/core/decide.ts';
 import { ACTION_LABEL, GROUP_LABEL, campaignName, dayLabel, inr, num, orderCode, pct } from '@/lib/format';
 import { getDb } from '@/lib/server/db.ts';
 import { runModelOutputs } from '@/lib/server/model.ts';
 
 export const dynamic = 'force-dynamic';
 
-const p3 = (x: unknown) => (x == null ? '—' : Number(x).toFixed(3));
+const p1 = (x: unknown) => (x == null ? '—' : pct(Number(x)));
+const CHOICES = [
+  ['none', 'Send nothing'],
+  ['nudge', 'Reminder'],
+  ['discount', '₹50 offer'],
+] as const;
 
 export default async function RunOutputsPage({
   params,
@@ -25,7 +30,6 @@ export default async function RunOutputsPage({
   if (!out) notFound();
   const { run, rows, agg, total, page, pageSize } = out;
   const day: string = run.source_batch_ids?.[0] ?? '';
-  const snap = run.settings_snapshot ?? {};
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const exampleId = Number(sp.order ?? rows[0]?.order_id ?? 0);
   const [ex] = exampleId
@@ -35,20 +39,25 @@ export default async function RunOutputsPage({
         [runId, exampleId],
       )
     : [];
+  const econ = ex?.detail?.econ
+    ? { margin: Number(ex.detail.econ.margin), codFee: Number(ex.detail.econ.codFee), rtoCost: Number(ex.detail.econ.rtoCost), discountAmount: Number(ex.detail.econ.discountAmount) }
+    : null;
   const qs = (p: Record<string, string | undefined>) => {
     const s = new URLSearchParams();
     for (const [k, v] of Object.entries({ group: sp.group, action: sp.action, page: sp.page, order: sp.order, ...p })) if (v) s.set(k, v);
     const str = s.toString();
     return `/model/runs/${runId}${str ? `?${str}` : ''}`;
   };
+  const here = qs({});
   const chip = (active: boolean) => `rounded-md px-2.5 py-1 text-[12px] ${active ? 'bg-white font-medium text-ink shadow-card' : 'text-ink-soft hover:text-ink'}`;
+  const aiTotal = (agg.ai_none ?? 0) + (agg.ai_nudge ?? 0) + (agg.ai_discount ?? 0);
 
   return (
     <div className="space-y-5">
       <PageHeader
-        back={{ href: '/model?tab=runs', label: 'Run outputs' }}
-        title={`Model output · ${campaignName(run.created_at)}`}
-        sub={`${num(agg.n)} orders from ${dayLabel(day)} scored by model v${run.model_version} · control ${pct(Number(snap.holdout_pct ?? 0), 0)} · random test ${pct(Number(snap.exploration_pct ?? 0), 0)}`}
+        back={{ href: '/model', label: 'Model' }}
+        title={`Predictions · ${campaignName(run.created_at)}`}
+        sub={`${num(agg.n)} orders from ${dayLabel(day)}, scored by model version ${run.model_version}. For each order the AI estimated what would happen under each choice, worked out the expected profit, and picked the best.`}
         actions={
           <Link href={`/campaigns/${runId}`} className="btn">
             Open campaign
@@ -57,121 +66,57 @@ export default async function RunOutputsPage({
       />
 
       <div className="grid grid-cols-4 gap-4">
-        <Tile label="AI decisions" value={num((agg.ai_none ?? 0) + (agg.ai_nudge ?? 0) + (agg.ai_discount ?? 0))} sub={`${num(agg.ai_none)} no message · ${num(agg.ai_nudge)} reminder · ${num(agg.ai_discount)} offer`} />
-        <Tile label="Set aside at random" value={num((agg.control ?? 0) + (agg.random_test ?? 0))} sub={`${num(agg.control)} control · ${num(agg.random_test)} random test`} />
-        <Tile label="Expected extra profit" tone="green" value={inr(agg.expected_gain)} sub="Sum of the chosen action’s gain, AI-decided orders" />
-        <Tile label="Average chance of a return if COD" value={pct(agg.rc)} sub={`vs ${pct(agg.rp_nudge)} if paid online`} />
+        <Tile label="Orders scored" value={num(agg.n)} sub={`${num(aiTotal)} decided by the AI · ${num((agg.control ?? 0) + (agg.random_test ?? 0))} set aside at random`} />
+        {CHOICES.map(([a, l]) => (
+          <div key={a} className="card min-h-[104px] px-4 py-3.5">
+            <div className="label">{a === 'none' ? 'If we send nothing' : a === 'nudge' ? 'If we send a reminder' : 'If we send the offer'}</div>
+            <div className="metric mt-1.5">{p1(agg[`p_${a}`])}</div>
+            <div className="mt-1 text-[12px] text-ink-faint">
+              would pay online, on average · {inr(agg[`ev_${a}`], 2)} profit per order · AI chose “{l.toLowerCase()}” for {num(agg[`ai_${a}`])}
+            </div>
+          </div>
+        ))}
       </div>
 
-      <div className="card overflow-auto">
-        <div className="border-b border-line px-4 py-3">
-          <h2>Average prediction per action, all orders in this run</h2>
-          <p className="mt-0.5 text-[12px] text-ink-faint">These averages feed nothing directly; every order is decided on its own numbers (table below).</p>
-        </div>
-        <table className="table-base">
-          <thead>
-            <tr>
-              <th>Action</th>
-              <th className="text-right">Pays online (P)</th>
-              <th className="text-right">Cancels (K)</th>
-              <th className="text-right">Returned if COD (Rc)</th>
-              <th className="text-right">Returned if prepaid (Rp)</th>
-              <th className="text-right">Expected profit per order</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(['none', 'nudge', 'discount'] as const).map((a) => (
-              <tr key={a}>
-                <td>{ACTION_LABEL[a]}</td>
-                <td className="text-right">{pct(agg[`p_${a}`])}</td>
-                <td className="text-right">{pct(agg[`k_${a}`])}</td>
-                <td className="text-right">{pct(agg.rc)}</td>
-                <td className="text-right">{a === 'none' ? '—' : pct(agg[`rp_${a}`])}</td>
-                <td className="text-right">{inr(agg[`ev_${a}`], 2)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {ex?.detail?.breakdown && (
+      {ex?.detail?.breakdown && econ && (
         <div className="card px-5 py-4">
-          <div className="flex items-baseline justify-between">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2>
-              Worked example · order {orderCode(ex.order_id)}{' '}
-              <Badge tone={GROUP_TONE[ex.assignment_group]}>{GROUP_LABEL[ex.assignment_group]}</Badge>{' '}
-              <Badge tone={ACTION_TONE[ex.chosen_action]}>{ACTION_LABEL[ex.chosen_action]}</Badge>
+              One order, worked through · {orderCode(ex.order_id)} <Badge tone={GROUP_TONE[ex.assignment_group]}>{GROUP_LABEL[ex.assignment_group]}</Badge>
             </h2>
-            <a href={`/inspector?run=${runId}&order=${ex.order_id}`} target="_blank" className="link text-[12px]">
-              Full order inspector →
-            </a>
+            <Link href={`/inspector?run=${runId}&order=${ex.order_id}&back=${encodeURIComponent(here)}`} className="link text-[12px]">
+              Everything about this order →
+            </Link>
           </div>
-          <p className="mt-1 text-[12px] text-ink-faint">Click any order in the table to show it here. Expected profit = Σ chance × profit of that outcome − message cost.</p>
-          <div className="mt-3 grid grid-cols-3 gap-3">
-            {(['none', 'nudge', 'discount'] as const).map((a) => {
-              const b = ex.detail.breakdown[a];
-              return (
-                <div key={a} className={`rounded-lg border px-4 py-3 ${ex.chosen_action === a ? 'border-rzp bg-rzp-faint' : 'border-line'}`}>
-                  <div className="flex items-center justify-between font-semibold">
-                    {ACTION_LABEL[a]}
-                    <span className="tabular-nums">{inr(b.ev, 2)}</span>
-                  </div>
-                  <table className="mt-2 w-full text-[11.5px]">
-                    <tbody>
-                      {OUTCOME_LABELS.map((l, i) => (
-                        <tr key={l} className="border-t border-line">
-                          <td className="py-1 text-ink-soft">{l}</td>
-                          <td className="py-1 text-right tabular-nums">{pct(b.pi[i])}</td>
-                          <td className="py-1 text-right tabular-nums text-ink-faint">× {inr(b.payoff[i])}</td>
-                          <td className="py-1 text-right tabular-nums">{inr(b.contribution[i], 2)}</td>
-                        </tr>
-                      ))}
-                      <tr className="border-t border-line">
-                        <td className="py-1 text-ink-soft" colSpan={3}>
-                          Message cost
-                        </td>
-                        <td className="py-1 text-right tabular-nums">−{inr(b.messageCost, 2)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                  {a !== 'none' && (
-                    <div className="mt-1.5 text-[11.5px] text-ink-soft">
-                      Gain vs no message:{' '}
-                      <b className={b.ev - ex.detail.breakdown.none.ev > 0 ? 'text-ok' : 'text-bad'}>{inr(b.ev - ex.detail.breakdown.none.ev, 2)}</b>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <p className="mt-1 text-[12.5px] text-ink-soft">{decisionSentence(ex.detail.breakdown, ex.chosen_action, ex.reason_code)}</p>
+          <p className="mb-3 mt-1 text-[12px] text-ink-faint">Click any order code in the table to work it through here.</p>
+          <ProfitBreakdown breakdown={ex.detail.breakdown} econ={econ} chosen={ex.chosen_action} />
         </div>
       )}
 
       <div className="card overflow-hidden">
         <div className="flex flex-wrap items-center gap-4 border-b border-line px-4 py-3">
-          <h2>Every order in this run</h2>
+          <h2>Every order in this campaign</h2>
           <div className="flex rounded-lg border border-line bg-panel p-0.5">
             {[
               ['', 'All'],
               ['model', 'AI-decided'],
-              ['holdout', 'Control'],
+              ['holdout', 'Control group'],
               ['explore', 'Random test'],
             ].map(([k, l]) => (
-              <Link key={k} href={qs({ group: k || undefined, page: undefined })} className={chip((sp.group ?? '') === k)}>
+              <Link key={k} href={qs({ group: k || undefined, page: undefined, order: undefined })} className={chip((sp.group ?? '') === k)}>
                 {l}
               </Link>
             ))}
           </div>
           <div className="flex rounded-lg border border-line bg-panel p-0.5">
-            {[['', 'Any action'], ...Object.entries(ACTION_LABEL)].map(([k, l]) => (
-              <Link key={k} href={qs({ action: k || undefined, page: undefined })} className={chip((sp.action ?? '') === k)}>
+            {[['', 'Any choice'], ...Object.entries(ACTION_LABEL)].map(([k, l]) => (
+              <Link key={k} href={qs({ action: k || undefined, page: undefined, order: undefined })} className={chip((sp.action ?? '') === k)}>
                 {l}
               </Link>
             ))}
           </div>
-          <span className="ml-auto text-[12px] text-ink-faint">
-            {num(total)} orders · sorted by best gain
-          </span>
+          <span className="ml-auto text-[12px] text-ink-faint">{num(total)} orders · biggest expected gain first</span>
         </div>
         <div className="overflow-auto">
           <table className="table-base">
@@ -179,26 +124,38 @@ export default async function RunOutputsPage({
               <tr>
                 <th rowSpan={2}>Order</th>
                 <th rowSpan={2}>Group</th>
-                <th colSpan={3} className="border-l border-line text-center">
-                  Pays online (P)
+                <th colSpan={3} className="border-l border-line text-center normal-case">
+                  Chance the customer pays online
                 </th>
-                <th colSpan={3} className="border-l border-line text-center">
-                  Cancels (K)
+                <th colSpan={3} className="border-l border-line text-center normal-case">
+                  Chance the customer cancels
                 </th>
-                <th colSpan={2} className="border-l border-line text-center">
-                  Returned
+                <th colSpan={2} className="border-l border-line text-center normal-case">
+                  Chance the order is returned
                 </th>
-                <th colSpan={3} className="border-l border-line text-center">
-                  Expected profit
+                <th colSpan={3} className="border-l border-line text-center normal-case">
+                  Expected profit per order
                 </th>
                 <th rowSpan={2} className="border-l border-line">
-                  Decision
+                  AI&apos;s choice
                 </th>
                 <th rowSpan={2}>What happened</th>
               </tr>
               <tr>
-                {['None', 'Remind', 'Offer', 'None', 'Remind', 'Offer', 'If COD', 'If prepaid', 'None', 'Remind', 'Offer'].map((h, i) => (
-                  <th key={i} className={`text-right ${i === 0 || i === 3 || i === 6 || i === 8 ? 'border-l border-line' : ''}`}>
+                {[
+                  'Send nothing',
+                  'Reminder',
+                  '₹50 offer',
+                  'Send nothing',
+                  'Reminder',
+                  '₹50 offer',
+                  'If paid cash',
+                  'If paid online',
+                  'Send nothing',
+                  'Reminder',
+                  '₹50 offer',
+                ].map((h, i) => (
+                  <th key={i} className={`text-right normal-case ${i === 0 || i === 3 || i === 6 || i === 8 ? 'border-l border-line' : ''}`}>
                     {h}
                   </th>
                 ))}
@@ -219,14 +176,14 @@ export default async function RunOutputsPage({
                     <td>
                       <Badge tone={GROUP_TONE[r.assignment_group]}>{GROUP_LABEL[r.assignment_group]}</Badge>
                     </td>
-                    <td className="border-l border-line text-right">{p3(r.p_convert_none)}</td>
-                    <td className="text-right">{p3(r.p_convert_nudge)}</td>
-                    <td className="text-right">{p3(r.p_convert_discount)}</td>
-                    <td className="border-l border-line text-right">{p3(r.p_cancel_none)}</td>
-                    <td className="text-right">{p3(r.p_cancel_nudge)}</td>
-                    <td className="text-right">{p3(r.p_cancel_discount)}</td>
-                    <td className="border-l border-line text-right">{p3(r.r_cod_none)}</td>
-                    <td className="text-right">{p3(r.r_pre_none)}</td>
+                    <td className="border-l border-line text-right">{p1(r.p_convert_none)}</td>
+                    <td className="text-right">{p1(r.p_convert_nudge)}</td>
+                    <td className="text-right">{p1(r.p_convert_discount)}</td>
+                    <td className="border-l border-line text-right">{p1(r.p_cancel_none)}</td>
+                    <td className="text-right">{p1(r.p_cancel_nudge)}</td>
+                    <td className="text-right">{p1(r.p_cancel_discount)}</td>
+                    <td className="border-l border-line text-right">{p1(r.r_cod_none)}</td>
+                    <td className="text-right">{p1(r.r_pre_none)}</td>
                     <td className={`border-l border-line ${evCls(r.ev_none)}`}>{inr(Number(r.ev_none), 2)}</td>
                     <td className={evCls(r.ev_nudge)}>{inr(Number(r.ev_nudge), 2)}</td>
                     <td className={evCls(r.ev_discount)}>{inr(Number(r.ev_discount), 2)}</td>
@@ -248,7 +205,7 @@ export default async function RunOutputsPage({
         </div>
         <div className="flex items-center justify-between border-t border-line px-4 py-2.5 text-[12px] text-ink-soft">
           <span>
-            Page {page} of {pages}
+            Green = the most profitable choice for that order. Control and random-test orders got what the random draw gave them. Page {page} of {pages}.
           </span>
           <span className="flex gap-2">
             {page > 1 && (
