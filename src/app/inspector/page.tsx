@@ -40,7 +40,7 @@ function Lookup({ run, order }: { run?: string; order?: string }) {
   return (
     <form method="get" className="card flex flex-wrap items-end gap-3 px-4 py-3">
       <label className="text-xs">
-        <div className="label">Run id</div>
+        <div className="label">Campaign id</div>
         <input name="run" defaultValue={run} className="input mt-0.5 w-28 font-mono" placeholder="e.g. 1" />
       </label>
       <label className="text-xs">
@@ -57,14 +57,14 @@ function Lookup({ run, order }: { run?: string; order?: string }) {
 export default async function InspectorPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
   const runId = Number(sp.run);
-  const orderId = Number(String(sp.order ?? '').replace(/^VD-0*/i, ''));
+  const orderId = Number(String(sp.order ?? '').replace(/^(DL|VD)-0*/i, ''));
   const db = getDb();
 
   if (!runId) {
     return (
       <div className="space-y-4">
         <Lookup />
-        <p className="text-sm text-ink-soft">Look up a decision by run id, or by run id and order id. Open it from any row on the Messages page.</p>
+        <p className="text-[13px] text-ink-soft">Look up a decision by campaign id and order id. The easiest way in is the “Why?” link on any order.</p>
       </div>
     );
   }
@@ -80,8 +80,8 @@ export default async function InspectorPage({ searchParams }: { searchParams: Pr
     return (
       <div className="space-y-4">
         <Lookup run={String(runId)} />
-        <Section title={`Run #${runId}`} sub="Run view (distribution, histogram, reason codes) is part of a later build step. Pick an order to inspect.">
-          <div className="text-xs text-ink-soft">Model-group orders where the nudge and discount were closest:</div>
+        <Section title={`Campaign ${runId}`} sub="Pick an order to see its decision step by step.">
+          <div className="text-[12px] text-ink-soft">AI-picked orders where the reminder and the offer were closest:</div>
           <div className="mt-2 flex flex-wrap gap-2">
             {examples.map((e) => (
               <Link key={e.order_id} href={`/inspector?run=${runId}&order=${e.order_id}`} className="btn btn-sm font-mono">
@@ -100,7 +100,7 @@ export default async function InspectorPage({ searchParams }: { searchParams: Pr
       <div className="space-y-4">
         <Lookup run={String(runId)} order={String(orderId)} />
         <div className="card card-pad text-sm text-ink-faint">
-          Order {orderCode(orderId)} is not in run #{runId}.
+          Order {orderCode(orderId)} is not in campaign {runId}.
         </div>
       </div>
     );
@@ -119,12 +119,16 @@ export default async function InspectorPage({ searchParams }: { searchParams: Pr
     const D = Number(bd.discount.discount);
     const discountCost = bd.discount.pi[0] * D;
     const liftValue = ev.discount - ev.nudge + discountCost;
-    if (chosen === 'nudge') {
-      why = `The nudge gains ${inr(gains.nudge, 2)} over doing nothing and the discount gains ${inr(gains.discount, 2)}. The discount lifts conversion from ${pct(Number(pr('p_convert', 'nudge')))} to ${pct(Number(pr('p_convert', 'discount')))}, worth ${inr(liftValue, 2)} in expected value, but it gives ${inr(D)} off on an expected ${prob(bd.discount.pi[0], 3)} prepaid deliveries, which costs ${inr(discountCost, 2)}. The extra conversion does not pay for the discount, so the nudge wins.`;
+    if (row.reason_code === 'holdout') {
+      why = `This order was picked at random for the control group, so it got no message. Control orders show what would have happened without the campaign. For reference, the model expected a reminder to earn ${inr(gains.nudge, 2)} and the offer ${inr(gains.discount, 2)}.`;
+    } else if (row.reason_code === 'explore') {
+      why = `This order was picked at random for the random test and got a ${ACTION_LABEL[chosen].toLowerCase()} by chance, not by the model. Random tests keep the model learning. The model itself expected a reminder to earn ${inr(gains.nudge, 2)} and the offer ${inr(gains.discount, 2)}.`;
+    } else if (chosen === 'nudge') {
+      why = `A reminder earns ${inr(gains.nudge, 2)} more than sending nothing; the ₹${D} offer earns ${inr(gains.discount, 2)}. The offer would lift the chance of paying online from ${pct(Number(pr('p_convert', 'nudge')))} to ${pct(Number(pr('p_convert', 'discount')))}, worth ${inr(liftValue, 2)}, but the ₹${D} off is paid on every expected online payment (${prob(bd.discount.pi[0], 3)} of an order), which costs ${inr(discountCost, 2)}. The extra payments don't cover the discount, so the reminder wins.`;
     } else if (chosen === 'discount') {
-      why = `The discount gains ${inr(gains.discount, 2)} over doing nothing and the nudge gains ${inr(gains.nudge, 2)}. The discount lifts conversion from ${pct(Number(pr('p_convert', 'nudge')))} to ${pct(Number(pr('p_convert', 'discount')))}, worth ${inr(liftValue, 2)}, more than the ${inr(discountCost, 2)} expected cost of the ${inr(D)} discount.`;
+      why = `The ₹${D} offer earns ${inr(gains.discount, 2)} more than sending nothing; a plain reminder earns ${inr(gains.nudge, 2)}. The offer lifts the chance of paying online from ${pct(Number(pr('p_convert', 'nudge')))} to ${pct(Number(pr('p_convert', 'discount')))}, worth ${inr(liftValue, 2)}, which is more than the ${inr(discountCost, 2)} the discount is expected to cost.`;
     } else if (row.reason_code === 'no_positive_gain') {
-      why = `Neither message beats doing nothing: nudge gain ${inr(gains.nudge, 2)}, discount gain ${inr(gains.discount, 2)}.`;
+      why = `Neither message is worth sending: a reminder would earn ${inr(gains.nudge, 2)} and the offer ${inr(gains.discount, 2)} compared with sending nothing.`;
     }
   }
 
@@ -138,23 +142,23 @@ export default async function InspectorPage({ searchParams }: { searchParams: Pr
           <div className="font-mono text-lg font-semibold">{orderCode(orderId)}</div>
         </div>
         <div>
-          <div className="label">Run</div>
-          <div className="font-medium">#{runId}</div>
+          <div className="label">Campaign</div>
+          <div className="font-medium">{runId}</div>
         </div>
         <div>
           <div className="label">Model version</div>
           <div className="font-medium">v{row.model_version ?? row.run_model_version}</div>
         </div>
         <div>
-          <div className="label">Assignment group</div>
+          <div className="label">Group</div>
           <div className="font-medium">{row.assignment_group ? GROUP_LABEL[row.assignment_group] : '—'}</div>
         </div>
         <div>
-          <div className="label">Chosen action</div>
+          <div className="label">Decision</div>
           <div className="font-medium">{chosen ? ACTION_LABEL[chosen] : '—'}</div>
         </div>
         <div>
-          <div className="label">Reason code</div>
+          <div className="label">Reason</div>
           <div className="font-medium">{row.reason_code ? REASON_LABEL[row.reason_code] : '—'}</div>
         </div>
         <div>
@@ -163,13 +167,13 @@ export default async function InspectorPage({ searchParams }: { searchParams: Pr
         </div>
         <div>
           <div className="label">Training</div>
-          <div className="font-medium">{row.used_in_training_version ? `Used in v${row.used_in_training_version}` : 'Not used'}</div>
+          <div className="font-medium">{row.used_in_training_version ? `Used to train v${row.used_in_training_version}` : 'Not used'}</div>
         </div>
       </div>
 
       {why && (
         <div className="rounded-lg border border-rzp/30 bg-rzp-soft px-4 py-3 text-sm">
-          <span className="font-semibold">Why {chosen ? ACTION_LABEL[chosen].toLowerCase() : 'this'}: </span>
+          <span className="font-semibold">Why {chosen ? ACTION_LABEL[chosen].toLowerCase() : 'this'}? </span>
           {why}
         </div>
       )}
@@ -203,7 +207,7 @@ export default async function InspectorPage({ searchParams }: { searchParams: Pr
         </Section>
 
         <div className="col-span-2">
-          <Section n="Step 1" title="Score · model probabilities" sub="Eight logistic regressions. Rc is one model, so it is the same for every action.">
+          <Section n="Step 1" title="Score · what the model predicts for each action" sub="Eight small models. The return-if-COD model doesn't depend on the action, so it's the same in every column.">
             <table className="table-base">
               <thead>
                 <tr>
@@ -217,10 +221,10 @@ export default async function InspectorPage({ searchParams }: { searchParams: Pr
               </thead>
               <tbody>
                 {[
-                  ['p_convert', 'P(a) · converts to prepaid'],
-                  ['p_cancel', 'K(a) · cancels before dispatch'],
-                  ['r_cod', 'Rc(a) · RTO if stays COD'],
-                  ['r_pre', 'Rp(a) · RTO if prepaid'],
+                  ['p_convert', 'P · pays online'],
+                  ['p_cancel', 'K · cancels before dispatch'],
+                  ['r_cod', 'Rc · returned if it stays COD'],
+                  ['r_pre', 'Rp · returned if paid online'],
                 ].map(([k, label]) => (
                   <tr key={k}>
                     <td className="text-ink-soft">{label}</td>
@@ -240,7 +244,7 @@ export default async function InspectorPage({ searchParams }: { searchParams: Pr
       {bd && (
         <Section
           n="Step 2"
-          title="Decide · expected net ₹ per action"
+          title="Decide · expected profit for each action"
           sub={`Inputs: margin m ${inr(det.econ.margin)}, cash fee F ${inr(det.econ.codFee)}, RTO cost C ${inr(det.econ.rtoCost)}, discount D ${inr(det.econ.discountAmount)}, message cost M ${inr(det.econ.messageCost, 2)} on ${f.channel === 'whatsapp' ? 'WhatsApp' : 'mobile inbox'}.`}
         >
           <div className="grid grid-cols-3 gap-3">
@@ -286,7 +290,7 @@ export default async function InspectorPage({ searchParams }: { searchParams: Pr
                         <td className="text-right font-semibold">{inr(b.ev, 2)}</td>
                       </tr>
                       <tr>
-                        <td className="font-semibold">Gain vs none</td>
+                        <td className="font-semibold">Extra vs no message</td>
                         <td />
                         <td />
                         <td className={`text-right font-semibold ${a === 'none' ? 'text-ink-faint' : b.ev - ev.none > 0 ? 'text-brand-700' : 'text-red-700'}`}>
@@ -303,15 +307,15 @@ export default async function InspectorPage({ searchParams }: { searchParams: Pr
             <div className="font-semibold text-ink">Decision rules, in order</div>
             <ol className="mt-1 list-decimal space-y-0.5 pl-4">
               <li>
-                Group: random draw {Number(det.draws.uGroup).toFixed(3)} vs holdout {pct(det.holdout_pct, 0)} and exploration {pct(det.exploration_pct, 0)} →{' '}
+                Group: random draw {Number(det.draws.uGroup).toFixed(3)} vs control {pct(det.holdout_pct, 0)} and random test {pct(det.exploration_pct, 0)} →{' '}
                 <span className="font-medium text-ink">{GROUP_LABEL[row.assignment_group]}</span>
                 {row.assignment_group === 'explore' && ` (arm draw ${Number(det.draws.uExplore).toFixed(3)})`}
               </li>
               <li>
-                Model orders take the highest gain above ₹0: nudge {inr(gains.nudge, 2)}, discount {inr(gains.discount, 2)}
+                AI-picked orders take the action with the highest extra profit above ₹0: reminder {inr(gains.nudge, 2)}, offer {inr(gains.discount, 2)}
               </li>
               <li>
-                Discount {det.discount_available ? 'available' : 'removed by the max-discount cap'} (D {inr(det.econ.discountAmount)} ≤ max {inr(det.econ.maxDiscount)}) → reason:{' '}
+                Offer {det.discount_available ? 'allowed' : 'removed by the max-discount cap'} ({inr(det.econ.discountAmount)} vs max {inr(det.econ.maxDiscount)}) → reason:{' '}
                 <span className="font-medium text-ink">{REASON_LABEL[row.reason_code]}</span>
               </li>
             </ol>
@@ -320,7 +324,7 @@ export default async function InspectorPage({ searchParams }: { searchParams: Pr
       )}
 
       {row.final_text ? (
-        <Section n="Step 3" title="Draft · LLM message" sub="The LLM only writes the wording. It never picks the action or the discount, and wording does not change simulated outcomes.">
+        <Section n="Step 3" title="Draft · the AI-written message" sub="The language model only writes the wording. It never picks the action or the discount, and wording does not change simulated outcomes.">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <div className="label mb-1">Prompt</div>
@@ -347,7 +351,7 @@ export default async function InspectorPage({ searchParams }: { searchParams: Pr
           </div>
         </Section>
       ) : (
-        <Section n="Step 3" title="Draft · LLM message">
+        <Section n="Step 3" title="Draft · the AI-written message">
           <p className="text-sm text-ink-faint">No message: the action is {chosen ? ACTION_LABEL[chosen].toLowerCase() : 'not decided yet'}.</p>
         </Section>
       )}
@@ -359,7 +363,7 @@ export default async function InspectorPage({ searchParams }: { searchParams: Pr
             {sends.length === 0 && <div className="text-ink-faint">Not sent.</div>}
             {sends.map((s) => (
               <div key={s.id}>
-                Run #{s.run_id} · attempt {s.attempt} · {ACTION_LABEL[s.action]} · {simTime(s.sent_at)}
+                Campaign {s.run_id} · message {s.attempt} · {ACTION_LABEL[s.action]} · {simTime(s.sent_at)}
               </div>
             ))}
             <div className="label mb-1 mt-3">Events</div>
@@ -377,9 +381,9 @@ export default async function InspectorPage({ searchParams }: { searchParams: Pr
             <div className="label mb-1">Order</div>
             <div>Placed {simTime(row.placed_at)} · dispatch deadline {simTime(row.dispatch_deadline)}</div>
             <div>
-              Converted to prepaid: {row.converted_at ? `yes, ${simTime(row.converted_at)} via ${row.converted_via === 'organic' ? 'the customer on their own' : row.converted_via}` : 'no'}
+              Paid online: {row.converted_at ? `yes, ${simTime(row.converted_at)}${row.converted_via === 'organic' ? ', on their own' : ` after the ${ACTION_LABEL[row.converted_via].toLowerCase()}`}` : 'no'}
             </div>
-            <div>Final outcome: {row.final_outcome ? `${row.final_outcome === 'rto' ? 'RTO' : row.final_outcome} at ${simTime(row.outcome_at)}` : 'pending'}</div>
+            <div>Final outcome: {row.final_outcome ? `${row.final_outcome === 'rto' ? 'returned (RTO)' : row.final_outcome}, ${simTime(row.outcome_at)}` : 'pending (3–5 days after dispatch)'}</div>
             <div>
               Discount paid {inr(Number(row.discount_paid))} · message cost {inr(Number(row.message_cost), 2)}
             </div>

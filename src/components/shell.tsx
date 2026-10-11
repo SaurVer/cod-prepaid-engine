@@ -3,48 +3,40 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { duration, simTime, STATUS_LABEL } from '@/lib/format';
+import { duration, timeIST, STATUS_LABEL } from '@/lib/format';
 import { api, useLive } from './live';
+import { ConceptLabel, DewluneLogo, PoweredByRazorpay } from './logos';
+
+export { ConceptLabel } from './logos';
 
 const NAV = [
-  { href: '/', label: 'Overview', icon: 'M3 12l9-8 9 8M5 10v10h14V10' },
-  { href: '/runs', label: 'Runs', icon: 'M5 4l14 8-14 8z' },
-  { href: '/messages', label: 'Messages', icon: 'M4 5h16v11H8l-4 4z' },
-  { href: '/results', label: 'Results', icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
-];
-const NAV_LOWER = [
-  { href: '/data', label: 'Data', icon: 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zm0 0v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3' },
+  { href: '/', label: 'Overview', icon: 'M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 8h6V4h-6z' },
+  { href: '/orders', label: 'Orders', icon: 'M6 2h9l5 5v15H6zM14 2v6h6M9 13h8M9 17h8' },
   { href: '/model', label: 'Model', icon: 'M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5' },
-  { href: '/settings', label: 'Settings', icon: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-1.8-.3 1.6 1.6 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.6 1.6 0 00-1-1.5 1.6 1.6 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00.3-1.8 1.6 1.6 0 00-1.5-1H3a2 2 0 110-4h.1a1.6 1.6 0 001.5-1 1.6 1.6 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 001.8.3H9a1.6 1.6 0 001-1.5V3a2 2 0 114 0v.1a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8V9a1.6 1.6 0 001.5 1H21a2 2 0 110 4h-.1a1.6 1.6 0 00-1.5 1z' },
+  { href: '/settings', label: 'Settings', icon: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M14 4v4M8 10v4M16 16v4' },
 ];
 
 function Icon({ d }: { d: string }) {
   return (
-    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] shrink-0" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
       <path d={d} />
     </svg>
   );
 }
 
-export function ConceptLabel({ className = '' }: { className?: string }) {
-  return (
-    <span className={`pill border border-amber-200 bg-amber-50 text-amber-800 ${className}`}>
-      Concept prototype · synthetic data
-    </span>
-  );
-}
-
 function NavLink({ href, label, icon }: { href: string; label: string; icon: string }) {
   const path = usePathname();
-  const active = href === '/' ? path === '/' : path.startsWith(href);
+  const active = href === '/' ? path === '/' || path.startsWith('/day') : path.startsWith(href);
   return (
     <Link
       href={href}
-      className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm ${
-        active ? 'bg-brand-600 font-medium text-white' : 'text-brand-100 hover:bg-brand-800 hover:text-white'
+      className={`flex items-center gap-3 rounded-lg px-3 py-2 text-[13.5px] transition-colors ${
+        active ? 'bg-white/10 font-medium text-white' : 'text-white/65 hover:bg-white/5 hover:text-white'
       }`}
     >
-      <Icon d={icon} />
+      <span className={active ? 'text-[#7EA0FF]' : ''}>
+        <Icon d={icon} />
+      </span>
       {label}
     </Link>
   );
@@ -63,7 +55,7 @@ function Bell() {
   return (
     <div className="relative" ref={ref}>
       <button
-        className="btn btn-sm relative"
+        className="btn btn-sm relative h-8 w-8 !p-0"
         aria-label="Notifications"
         onClick={async () => {
           setOpen((o) => !o);
@@ -77,20 +69,20 @@ function Bell() {
           <path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0" />
         </svg>
         {unread > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rzp px-1 text-2xs font-semibold text-white">
+          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-bad px-1 text-[10px] font-semibold text-white">
             {unread}
           </span>
         )}
       </button>
       {open && (
-        <div className="absolute right-0 top-9 z-40 w-80 rounded-lg border border-line bg-white shadow-xl">
-          <div className="border-b border-line px-3 py-2 text-xs font-semibold">Notifications</div>
-          <div className="max-h-80 overflow-auto">
-            {(state?.notifications ?? []).length === 0 && <div className="px-3 py-4 text-xs text-ink-faint">Nothing yet.</div>}
+        <div className="absolute right-0 top-10 z-40 w-[340px] overflow-hidden rounded-xl border border-line bg-white shadow-pop">
+          <div className="border-b border-line px-4 py-2.5 text-[13px] font-semibold">Notifications</div>
+          <div className="max-h-96 overflow-auto">
+            {(state?.notifications ?? []).length === 0 && <div className="px-4 py-5 text-xs text-ink-faint">Nothing yet.</div>}
             {(state?.notifications ?? []).map((n) => (
-              <a key={n.id} href={n.link ?? '#'} className="block border-b border-line px-3 py-2 text-xs last:border-0 hover:bg-canvas">
+              <a key={n.id} href={n.link ?? '#'} className="block border-b border-line px-4 py-2.5 text-[12.5px] last:border-0 hover:bg-rzp-faint">
                 <div className="text-ink">{n.message}</div>
-                <div className="mt-0.5 text-2xs text-ink-faint">Sim {simTime(n.created_at)}</div>
+                <div className="mt-0.5 text-[11px] text-ink-faint">{timeIST(n.created_real_at)}</div>
               </a>
             ))}
           </div>
@@ -100,59 +92,33 @@ function Bell() {
   );
 }
 
-function Clock() {
-  const { state, setState, toast } = useLive();
-  const [busy, setBusy] = useState(false);
-  const owner = state?.role === 'owner';
-  const act = async (action: 'pause' | 'resume' | 'advance') => {
-    setBusy(true);
-    try {
-      setState(await api('/api/clock', { method: 'POST', json: { action } }));
-      if (action === 'advance') toast('Advanced 1 sim day. Due outcomes resolved and the next batch arrived.', 'info');
-    } catch (e) {
-      toast(e instanceof Error ? e.message : 'Failed', 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
+function RefreshControl() {
+  const { state, refreshAll, refreshing } = useLive();
   return (
     <div className="flex items-center gap-2">
-      <div className="flex items-center gap-2 rounded-md border border-line bg-white px-2.5 py-1">
-        <span className="text-xs text-ink-faint">Sim time</span>
-        <span className="font-mono text-sm font-medium">{simTime(state?.sim_now)}</span>
-        <span className={`pill ${state?.is_live ? 'bg-brand-100 text-brand-700' : 'bg-gray-100 text-ink-soft'}`}>
-          <span className={`h-1.5 w-1.5 rounded-full ${state?.is_live ? 'animate-pulse bg-brand-500' : 'bg-gray-400'}`} />
-          {state?.is_live ? 'Live' : 'Paused'}
-        </span>
-      </div>
-      <button
-        className="btn btn-sm"
-        disabled={busy || !owner}
-        title={owner ? '' : 'Owner only'}
-        onClick={() => act(state?.is_live ? 'pause' : 'resume')}
-      >
-        {state?.is_live ? 'Pause' : 'Resume'}
-      </button>
-      <button className="btn btn-sm" disabled={busy || !owner} title={owner ? '' : 'Owner only'} onClick={() => act('advance')}>
-        {busy ? 'Working…' : 'Advance 1 day'}
+      <span className="text-[12px] text-ink-faint">Updated {timeIST(state?.last_synced)}</span>
+      <button className="btn btn-sm" onClick={() => refreshAll()} disabled={refreshing} title="Pull new orders and customer responses">
+        <svg viewBox="0 0 24 24" className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth={2}>
+          <path d="M20 12a8 8 0 11-2.3-5.6M20 4v5h-5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        {refreshing ? 'Refreshing…' : 'Refresh'}
       </button>
     </div>
   );
 }
 
-function RunIndicator() {
+function CampaignIndicator() {
   const { state } = useLive();
   const runs = state?.active_runs ?? [];
   if (!runs.length) return null;
   const r = runs[0];
   return (
-    <Link href={`/runs/${r.id}`} className="flex items-center gap-2 rounded-md border border-rzp/30 bg-rzp-soft px-2.5 py-1 text-xs text-rzp">
+    <Link href={r.href} className="flex items-center gap-2 rounded-lg border border-rzp/25 bg-rzp-soft px-3 py-1.5 text-[12px] text-rzp">
       <span className="h-3 w-3 animate-spin rounded-full border-2 border-rzp border-t-transparent" />
       <span className="font-medium">
-        Run #{r.id} · {STATUS_LABEL[r.status]} {Math.round(r.progress)}%
+        Campaign running · {STATUS_LABEL[r.status]} {Math.round(r.progress)}%
       </span>
-      {r.eta_seconds != null && <span className="text-rzp/80">ETA {duration(r.eta_seconds)}</span>}
-      {runs.length > 1 && <span className="text-rzp/80">+{runs.length - 1} queued</span>}
+      {r.eta_seconds != null && <span className="opacity-75">· about {duration(r.eta_seconds)} left</span>}
     </Link>
   );
 }
@@ -161,71 +127,57 @@ function RoleSwitch() {
   const { state, refreshState } = useLive();
   const router = useRouter();
   return (
-    <select
-      className="input py-1 text-xs"
-      value={state?.role ?? 'owner'}
-      onChange={async (e) => {
-        await api('/api/role', { method: 'POST', json: { role: e.target.value } });
-        await refreshState();
-        router.refresh();
-      }}
-      aria-label="Role"
-    >
-      <option value="owner">Owner</option>
-      <option value="analyst">Analyst</option>
-    </select>
+    <label className="flex items-center gap-1.5 text-[12px] text-ink-faint">
+      Viewing as
+      <select
+        className="input py-1 text-[12px]"
+        value={state?.role ?? 'owner'}
+        onChange={async (e) => {
+          await api('/api/role', { method: 'POST', json: { role: e.target.value } });
+          await refreshState();
+          router.refresh();
+        }}
+      >
+        <option value="owner">Owner</option>
+        <option value="analyst">Analyst</option>
+      </select>
+    </label>
   );
 }
 
 export function Shell({ children }: { children: React.ReactNode }) {
-  const { state } = useLive();
   return (
     <div className="flex min-h-screen">
-      <aside className="sticky top-0 flex h-screen w-52 shrink-0 flex-col bg-brand-900 px-3 py-4">
-        <div className="mb-6 px-2">
-          <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-brand-500 text-sm font-bold text-white">V</span>
-            <div>
-              <div className="text-sm font-semibold text-white">{state?.merchant?.name ?? 'Verdant Daily'}</div>
-              <div className="text-2xs text-brand-300">COD → Prepaid</div>
-            </div>
-          </div>
+      <aside className="sticky top-0 flex h-screen w-[220px] shrink-0 flex-col bg-rzp-navy px-3 py-5">
+        <div className="mb-7 px-2">
+          <DewluneLogo light />
         </div>
-        <nav className="flex flex-col gap-0.5">
+        <nav className="flex flex-col gap-1">
           {NAV.map((n) => (
             <NavLink key={n.href} {...n} />
           ))}
         </nav>
-        <div className="mb-2 mt-6 px-2.5 text-2xs font-medium uppercase tracking-wide text-brand-300">Data & model</div>
-        <nav className="flex flex-col gap-0.5">
-          {NAV_LOWER.map((n) => (
-            <NavLink key={n.href} {...n} />
-          ))}
-        </nav>
-        <div className="mt-auto px-2 text-2xs text-brand-300">
-          Powered by <span className="font-semibold text-white">Razorpay</span>
+        <div className="mt-auto space-y-3 px-2">
+          <div className="rounded-lg bg-white/5 px-3 py-2.5 text-[11px] leading-relaxed text-white/55">
+            COD → Prepaid decisions for repeat customers, on your own order data.
+          </div>
+          <PoweredByRazorpay light />
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-white/95 px-5 backdrop-blur">
-          <div className="text-sm font-semibold">{state?.merchant?.name ?? 'Verdant Daily'}</div>
-          <Clock />
-          <RunIndicator />
-          <div className="ml-auto flex items-center gap-2">
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-white/95 px-6 backdrop-blur">
+          <RefreshControl />
+          <CampaignIndicator />
+          <div className="ml-auto flex items-center gap-3">
             <ConceptLabel />
             <Bell />
             <RoleSwitch />
-            <span className="hidden text-2xs text-ink-faint xl:inline">
-              Powered by <span className="font-semibold text-ink-soft">Razorpay</span>
-            </span>
           </div>
         </header>
-        <main className="min-w-0 flex-1 px-5 py-5">{children}</main>
-        <footer className="flex items-center justify-between border-t border-line px-5 py-3 text-2xs text-ink-faint">
-          <span>Concept prototype · synthetic data · all metrics are simulated</span>
-          <span>
-            Powered by <span className="font-semibold text-ink-soft">Razorpay</span>
-          </span>
+        <main className="min-w-0 flex-1 px-6 py-6">{children}</main>
+        <footer className="flex items-center justify-between border-t border-line px-6 py-3 text-[11px] text-ink-faint">
+          <span>Concept prototype · synthetic data · all results are simulated</span>
+          <PoweredByRazorpay />
         </footer>
       </div>
     </div>

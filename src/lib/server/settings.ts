@@ -77,9 +77,9 @@ export function economicsFor(s: MerchantSettings, channel: string): Economics {
 
 export const DEFAULTS = {
   merchant: {
-    name: 'Verdant Daily',
-    brand_primary: '#2F6B4F',
-    brand_accent: '#E8F1EC',
+    name: 'Dewlune',
+    brand_primary: '#192839',
+    brand_accent: '#F4A38C',
     tone_guide: 'Warm, calm and plain-spoken. Short sentences. Friendly, never pushy. No emojis.',
   },
   settings: {
@@ -97,10 +97,56 @@ export const DEFAULTS = {
   },
   exploration_pct: 0.1,
   real_minutes_per_sim_day: 10,
-  /** First live sim day; the 30-day pilot covers the days before it. */
-  sim_start_date: '2026-10-12',
-  sim_start_hour: 6,
+  /** Days of seeded history shown on the dashboard (including today). */
+  history_days: 30,
+  /** Hour (IST) when the historical daily campaign ran. */
+  history_campaign_hour: 21,
 };
+
+// ---------- Indian Standard Time helpers (all dates on screen are IST) ----------
+export const IST_OFFSET_MS = 5.5 * HOUR;
+
+/** IST calendar date (YYYY-MM-DD) for a UTC instant. */
+export function istDate(ms: number): string {
+  return new Date(ms + IST_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** UTC instant of 00:00 IST on a given IST date. */
+export function istDayStart(date: string): number {
+  return Date.parse(`${date}T00:00:00Z`) - IST_OFFSET_MS;
+}
+
+export function addDays(date: string, n: number): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
+}
+
+/** Share of a day's orders that arrive by each IST hour: quiet at night, peaks at lunch and evening. */
+const HOURLY = [1, 0.6, 0.4, 0.3, 0.3, 0.5, 1, 2, 3, 4, 5, 6, 6, 5.5, 5, 4.5, 4.5, 5, 6, 7, 7.5, 6.5, 4, 2];
+const HOURLY_TOTAL = HOURLY.reduce((a, b) => a + b, 0);
+
+/** Cumulative share (0..1) of the day's orders placed by `msIntoDay`. */
+export function dayCurve(msIntoDay: number): number {
+  const h = Math.max(0, Math.min(24, msIntoDay / HOUR));
+  let acc = 0;
+  for (let i = 0; i < 24; i++) {
+    if (h >= i + 1) acc += HOURLY[i];
+    else {
+      acc += HOURLY[i] * (h - i);
+      break;
+    }
+  }
+  return acc / HOURLY_TOTAL;
+}
+
+/** Inverse of dayCurve: ms into the day by which a share `q` of orders has arrived. */
+export function dayCurveInverse(q: number): number {
+  let target = Math.max(0, Math.min(1, q)) * HOURLY_TOTAL;
+  for (let i = 0; i < 24; i++) {
+    if (target <= HOURLY[i]) return (i + target / HOURLY[i]) * HOUR;
+    target -= HOURLY[i];
+  }
+  return 24 * HOUR;
+}
 
 export async function audit(
   db: Db,
@@ -126,9 +172,43 @@ export async function notify(db: Db, type: string, message: string, link: string
 }
 
 export function orderCode(id: number | string): string {
-  return `VD-${String(id).padStart(6, '0')}`;
+  return `DL-${String(id).padStart(6, '0')}`;
 }
 
-export function dateKey(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10);
+// ---------- Settings page ----------
+
+export const EDITABLE_SETTINGS = [
+  'margin', 'cod_fee', 'rto_cost', 'msg_cost_whatsapp', 'msg_cost_inbox', 'discount_amount', 'max_discount',
+  'holdout_pct', 'max_sends', 'min_gap_hours',
+] as const;
+
+export async function saveSettings(db: Db, role: string, patch: Record<string, unknown>) {
+  const before = await getMerchantSettings(db);
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  for (const k of EDITABLE_SETTINGS) {
+    if (patch[k] === undefined || patch[k] === '') continue;
+    const v = Number(patch[k]);
+    if (!Number.isFinite(v) || v < 0) continue;
+    vals.push(v);
+    sets.push(`${k} = $${vals.length}`);
+  }
+  if (sets.length) await db.query(`update merchant_settings set ${sets.join(', ')}, updated_at = now() where merchant_id = 1`, vals);
+  if (typeof patch.tone_guide === 'string' || typeof patch.name === 'string') {
+    await db.query(`update merchants set name = coalesce($1, name), tone_guide = coalesce($2, tone_guide) where id = 1`, [
+      typeof patch.name === 'string' && patch.name.trim() ? patch.name.trim() : null,
+      typeof patch.tone_guide === 'string' && patch.tone_guide.trim() ? patch.tone_guide.trim() : null,
+    ]);
+  }
+  const after = await getMerchantSettings(db);
+  await audit(db, role, 'settings_change', 'merchant_settings', before, after);
+  return after;
+}
+
+export async function setIntegration(db: Db, role: string, key: string, consent: boolean) {
+  await db.query(
+    `update integrations set consent = $2, connected = $2, connected_at = case when $2 then now() else connected_at end where key = $1`,
+    [key, consent],
+  );
+  await audit(db, role, consent ? 'integration_connect' : 'integration_disconnect', `integration:${key}`, null, { consent });
 }

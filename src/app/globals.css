@@ -3,25 +3,29 @@
 @tailwind utilities;
 
 @layer base {
-  body { @apply bg-canvas text-ink antialiased; font-feature-settings: 'tnum' 1, 'cv11' 1; }
-  h1 { @apply text-xl font-semibold tracking-tight; }
-  h2 { @apply text-sm font-semibold; }
+  html { -webkit-font-smoothing: antialiased; }
+  body { @apply bg-canvas text-[13px] text-ink; font-feature-settings: 'tnum' 1, 'cv11' 1; }
+  h1 { @apply text-[22px] font-semibold tracking-[-0.01em] text-ink; }
+  h2 { @apply text-[15px] font-semibold text-ink; }
+  h3 { @apply text-[13px] font-semibold text-ink; }
 }
 
 @layer components {
-  .card { @apply rounded-lg border border-line bg-white; }
-  .card-pad { @apply p-4; }
-  .label { @apply text-2xs font-medium uppercase tracking-wide text-ink-faint; }
-  .metric { @apply text-2xl font-semibold tabular-nums tracking-tight; }
-  .btn { @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-line bg-white px-3 py-1.5 text-sm font-medium text-ink hover:bg-canvas disabled:cursor-not-allowed disabled:opacity-50; }
-  .btn-sm { @apply px-2 py-1 text-xs; }
-  .btn-primary { @apply border-rzp bg-rzp text-white hover:bg-rzp-hover; }
-  .btn-brand { @apply border-brand-600 bg-brand-600 text-white hover:bg-brand-700; }
-  .btn-danger { @apply border-red-200 text-red-700 hover:bg-red-50; }
-  .pill { @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-medium; }
-  .input { @apply rounded-md border border-line bg-white px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100; }
-  .table-base { @apply w-full text-left text-xs; }
-  .table-base th { @apply sticky top-0 z-10 whitespace-nowrap border-b border-line bg-canvas px-2 py-1.5 text-2xs font-semibold uppercase tracking-wide text-ink-faint; }
-  .table-base td { @apply whitespace-nowrap border-b border-line px-2 py-1.5 tabular-nums; }
-  .table-base tr:hover td { @apply bg-brand-50/50; }
+  .card { @apply rounded-xl border border-line bg-white shadow-card; }
+  .card-pad { @apply p-5; }
+  .label { @apply text-[11px] font-medium uppercase tracking-[0.04em] text-ink-faint; }
+  .metric { @apply text-[26px] font-semibold leading-tight tracking-[-0.02em] tabular-nums text-ink; }
+  .metric-sm { @apply text-[18px] font-semibold tabular-nums text-ink; }
+  .muted { @apply text-ink-soft; }
+  .btn { @apply inline-flex items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-3.5 py-2 text-[13px] font-medium text-ink transition-colors hover:border-ink-faint/50 hover:bg-panel disabled:cursor-not-allowed disabled:opacity-50; }
+  .btn-sm { @apply rounded-md px-2.5 py-1.5 text-xs; }
+  .btn-primary { @apply border-rzp bg-rzp text-white hover:border-rzp-hover hover:bg-rzp-hover; }
+  .btn-ghost { @apply border-transparent bg-transparent text-rzp hover:bg-rzp-faint; }
+  .pill { @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium; }
+  .input { @apply rounded-lg border border-line bg-white px-2.5 py-1.5 text-[13px] text-ink focus:border-rzp focus:outline-none focus:ring-2 focus:ring-rzp-soft; }
+  .link { @apply font-medium text-rzp hover:underline; }
+  .table-base { @apply w-full text-left text-[12.5px]; }
+  .table-base th { @apply sticky top-0 z-10 whitespace-nowrap border-b border-line bg-panel px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.03em] text-ink-faint; }
+  .table-base td { @apply whitespace-nowrap border-b border-line px-3 py-2.5 tabular-nums; }
+  .table-base tbody tr:hover td { @apply bg-rzp-faint; }
 }

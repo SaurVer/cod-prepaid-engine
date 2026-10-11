@@ -2,7 +2,7 @@
 // Each step writes its own table and processes ~200 orders per call so progress and ETA are real.
 
 import { type Action, decide } from '../core/decide.ts';
-import { type DraftOrder, hintFor } from '../core/llm.ts';
+import { type DraftOrder, expectedVariant, fallbackText, hintFor } from '../core/llm.ts';
 import { predictAll, toVector } from '../core/model.ts';
 import type { Draws } from '../core/sim.ts';
 import type { Db } from './db.ts';
@@ -27,7 +27,8 @@ const W_SCORE = 1;
 const W_DECIDE = 1;
 const W_DRAFT = 20; // an LLM draft takes far longer than a score or a decision
 
-export class UserError extends Error {}
+export { UserError } from './errors.ts';
+import { UserError } from './errors.ts';
 
 /** Orders that a new run would take from the chosen batches (new eligible orders only). */
 async function newEligibleIds(db: Db, batchIds: string[]): Promise<number[]> {
@@ -81,7 +82,7 @@ export async function createRun(db: Db, opts: { batchIds: string[]; role: string
   if (!opts.batchIds.length) throw new UserError('Choose at least one batch.');
   return db.tx(async (t) => {
     const ids = await newEligibleIds(t, opts.batchIds);
-    if (!ids.length) throw new UserError('No new eligible orders in the selected batches.');
+    if (!ids.length) throw new UserError('No new orders are ready for a campaign on this day.');
     const ms = await getMerchantSettings(t);
     const sys = (await getSystemSettings(t))!;
     if (!ms.active_model_version) throw new UserError('No active model.');
@@ -105,8 +106,22 @@ export async function createRun(db: Db, opts: { batchIds: string[]; role: string
       orders: ids.length,
       model_version: ms.active_model_version,
     });
-    return { id, orders: ids.length };
+    return { id, orders: ids.length, href: campaignHref(opts.batchIds[0], id), name: campaignName(sys.sim_now) };
   });
+}
+
+export function campaignHref(date: string | undefined, runId: number): string {
+  return `/day/${date ?? 'today'}/campaign/${runId}`;
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "Campaign · 11 Oct, 5:40 PM" in IST */
+export function campaignName(createdAt: string): string {
+  const d = new Date(Date.parse(createdAt) + 5.5 * 3600_000);
+  let h = d.getUTCHours();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `Campaign · ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}, ${h}:${String(d.getUTCMinutes()).padStart(2, '0')} ${ampm}`;
 }
 
 function weightedProgress(r: any) {
@@ -134,7 +149,16 @@ async function updateProgress(db: Db, runId: number, status: string) {
 }
 
 /** Process the next chunk of the oldest active run. Safe to call from several tabs at once. */
-export async function processNext(db: Db): Promise<{ run_id: number | null; status: string; busy?: boolean }> {
+export interface ProcessOptions {
+  /** orders per call (default ~200) */
+  chunk?: number;
+  /** use fixed templates instead of LLM calls (seeded history) */
+  template?: boolean;
+  /** no notifications (seeded history) */
+  quiet?: boolean;
+}
+
+export async function processNext(db: Db, opts: ProcessOptions = {}): Promise<{ run_id: number | null; status: string; busy?: boolean }> {
   const claimed = await db.query(
     `update runs r set lease_until = now() + interval '90 seconds',
        status = case when r.status = 'queued' then 'scoring'::run_status else r.status end,
@@ -153,17 +177,18 @@ export async function processNext(db: Db): Promise<{ run_id: number | null; stat
   const runId = Number(run.id);
   try {
     let status: string = run.status;
-    if (status === 'scoring') status = await scoreChunk(db, run);
-    else if (status === 'deciding') status = await decideChunk(db, run);
-    else if (status === 'drafting') status = await draftChunk(db, run);
+    const chunk = opts.chunk ?? CHUNK;
+    if (status === 'scoring') status = await scoreChunk(db, run, chunk);
+    else if (status === 'deciding') status = await decideChunk(db, run, chunk);
+    else if (status === 'drafting') status = await draftChunk(db, run, chunk, Boolean(opts.template));
     await updateProgress(db, runId, status);
-    if (status === 'ready_for_review') {
-      const [r] = await db.query(`select order_count from runs where id = $1`, [runId]);
+    if (status === 'ready_for_review' && !opts.quiet) {
+      const [r] = await db.query(`select order_count, created_at, source_batch_ids from runs where id = $1`, [runId]);
       await notify(
         db,
         'run_ready',
-        `Run #${runId} ready for review: ${Number(r.order_count).toLocaleString('en-IN')} orders`,
-        `/runs/${runId}`,
+        `${campaignName(r.created_at)} is ready to review: ${Number(r.order_count).toLocaleString('en-IN')} orders`,
+        campaignHref(r.source_batch_ids?.[0], runId),
       );
     }
     return { run_id: runId, status };
@@ -173,12 +198,12 @@ export async function processNext(db: Db): Promise<{ run_id: number | null; stat
   }
 }
 
-async function scoreChunk(db: Db, run: any): Promise<string> {
+async function scoreChunk(db: Db, run: any, chunk: number): Promise<string> {
   const rows = await db.query(
     `select ro.order_id, o.features from run_orders ro join orders o on o.id = ro.order_id
      where ro.run_id = $1 and not exists (select 1 from predictions p where p.run_id = ro.run_id and p.order_id = ro.order_id)
      order by ro.seq limit $2`,
-    [run.id, CHUNK],
+    [run.id, chunk],
   );
   if (rows.length) {
     const model = await loadModel(db, Number(run.model_version));
@@ -216,7 +241,7 @@ async function scoreChunk(db: Db, run: any): Promise<string> {
   return Number(r.scored_count) >= Number(r.order_count) ? 'deciding' : 'scoring';
 }
 
-async function decideChunk(db: Db, run: any): Promise<string> {
+async function decideChunk(db: Db, run: any, chunk: number): Promise<string> {
   const snap = run.settings_snapshot as SettingsSnapshot;
   const rows = await db.query(
     `select p.*, o.features from predictions p
@@ -224,7 +249,7 @@ async function decideChunk(db: Db, run: any): Promise<string> {
      join orders o on o.id = p.order_id
      where p.run_id = $1 and not exists (select 1 from decisions d where d.run_id = p.run_id and d.order_id = p.order_id)
      order by ro.seq limit $2`,
-    [run.id, CHUNK],
+    [run.id, chunk],
   );
   if (rows.length) {
     const out = rows.map((r) => {
@@ -299,7 +324,7 @@ async function decideChunk(db: Db, run: any): Promise<string> {
   return Number(c.n) > 0 ? 'drafting' : 'ready_for_review';
 }
 
-async function draftChunk(db: Db, run: any): Promise<string> {
+async function draftChunk(db: Db, run: any, chunk: number, template: boolean): Promise<string> {
   const rows = await db.query(
     `select d.order_id, d.chosen_action, d.discount_applied, o.features, c.last_category
      from decisions d
@@ -309,7 +334,7 @@ async function draftChunk(db: Db, run: any): Promise<string> {
      where d.run_id = $1 and d.chosen_action <> 'none'
        and not exists (select 1 from messages m where m.run_id = d.run_id and m.order_id = d.order_id)
      order by ro.seq limit $2`,
-    [run.id, CHUNK],
+    [run.id, chunk],
   );
   if (rows.length) {
     const merchant = (await getMerchant(db))!;
@@ -322,7 +347,19 @@ async function draftChunk(db: Db, run: any): Promise<string> {
       last_category: r.last_category,
       channel: r.features.channel,
     }));
-    const results = await draftMessages(drafts, merchant.name, merchant.tone_guide);
+    const results = template
+      ? drafts.map((d) => {
+          const variant = expectedVariant(d);
+          return {
+            order_id: d.order_id,
+            prompt: '(historical campaign: fixed template, no LLM call)',
+            output: 'Template (historical campaign)',
+            text: fallbackText(variant, merchant.name, d.discount),
+            variant,
+            fallback: true,
+          };
+        })
+      : await draftMessages(drafts, merchant.name, merchant.tone_guide);
     await db.query(
       `insert into messages (run_id, order_id, merchant_id, channel, llm_prompt, llm_output, final_text, variant_tag, fallback_used)
        select $1, oid, ${MERCHANT_ID}, ch::channel_type, pr, ou, tx, vt::variant_tag, fb
@@ -397,12 +434,12 @@ export async function approvalSummary(db: Db, runId: number) {
   };
 }
 
-export async function approveAndSend(db: Db, runId: number, role: string) {
-  if (role !== 'owner') throw new UserError('Only the Owner can approve and send.');
+export async function approveAndSend(db: Db, runId: number, role: string, opts: { speed?: 'live' | 'history'; quiet?: boolean } = {}) {
+  if (role !== 'owner') throw new UserError('Only the Owner can approve and send. Use “Request approval” instead.');
   return db.tx(async (t) => {
     const [run] = await t.query(`select * from runs where id = $1 for update`, [runId]);
     if (!run) throw new UserError('Run not found.');
-    if (run.status !== 'ready_for_review') throw new UserError(`Run #${runId} is ${run.status.replace(/_/g, ' ')}, not ready for review.`);
+    if (run.status !== 'ready_for_review') throw new UserError(`This campaign is ${run.status.replace(/_/g, ' ')}, not ready to send.`);
     const summary = await approvalSummary(t, runId);
     const rows = await sendable(t, runId);
     const sys = (await getSystemSettings(t))!;
@@ -454,19 +491,22 @@ export async function approveAndSend(db: Db, runId: number, role: string) {
           draws: r as unknown as Draws,
         })),
         Date.parse(sentAt),
+        opts.speed ?? 'live',
       );
     }
     await t.query(
       `update runs set status = 'sent', approved_at = $2, approved_by_role = $3::user_role where id = $1`,
       [runId, sentAt, role],
     );
-    await audit(t, role, 'approve_and_send', `run:${runId}`, null, summary);
-    await notify(
-      t,
-      'run_sent',
-      `Run #${runId} sent: ${rows.length.toLocaleString('en-IN')} messages`,
-      `/results?run=${runId}`,
-    );
+    if (!opts.quiet) {
+      await audit(t, role, 'approve_and_send', `campaign:${runId}`, null, summary);
+      await notify(
+        t,
+        'run_sent',
+        `${campaignName(run.created_at)} sent: ${rows.length.toLocaleString('en-IN')} messages. Customer responses arrive over the next few minutes.`,
+        campaignHref(run.source_batch_ids?.[0], runId),
+      );
+    }
     return { sent: sends.length, summary };
   });
 }
@@ -497,4 +537,17 @@ export async function setReview(db: Db, runId: number, orderIds: number[], revie
   );
   await audit(db, role, `review_${review}`, `run:${runId}`, null, { orders: r.length });
   return { updated: r.length };
+}
+
+export async function requestApproval(db: Db, runId: number, role: string) {
+  const [run] = await db.query(`select * from runs where id = $1`, [runId]);
+  if (!run) throw new UserError('Campaign not found.');
+  await notify(
+    db,
+    'approval_request',
+    `Approval requested by ${role === 'analyst' ? 'an Analyst' : role}: ${campaignName(run.created_at)}`,
+    campaignHref(run.source_batch_ids?.[0], runId),
+  );
+  await audit(db, role, 'request_approval', `campaign:${runId}`, null, null);
+  return { ok: true };
 }

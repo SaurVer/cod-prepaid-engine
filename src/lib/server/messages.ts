@@ -26,6 +26,29 @@ export interface MessageRow {
   converted_via: string | null;
   outcome: string | null;
   lifecycle: string;
+  /** plain-language status after sending */
+  status: string;
+  status_tone: 'gray' | 'blue' | 'green' | 'red' | 'amber' | 'violet';
+}
+
+function statusOf(r: Omit<MessageRow, 'status' | 'status_tone'>): [string, MessageRow['status_tone']] {
+  if (r.outcome === 'rto') return ['Returned (RTO)', 'red'];
+  if (r.outcome === 'cancelled') return ['Cancelled', 'amber'];
+  if (r.converted) {
+    const label = r.converted_via === 'organic' ? 'Paid online (on their own)' : 'Paid online';
+    return [r.outcome === 'delivered' ? `${label} · delivered` : label, 'green'];
+  }
+  if (r.outcome === 'delivered') return ['Stayed COD · delivered', 'gray'];
+  if (r.sent) {
+    if (r.clicked) return ['Clicked link', 'blue'];
+    if (r.opened) return ['Opened', 'blue'];
+    if (r.delivered) return ['Delivered to phone', 'gray'];
+    return ['Sent', 'gray'];
+  }
+  if (r.group === 'holdout') return ['Control · no message', 'gray'];
+  if (r.action === 'none') return ['No message', 'gray'];
+  if (r.text) return [r.review === 'rejected' ? 'Excluded' : 'Draft ready', 'violet'];
+  return ['Waiting', 'gray'];
 }
 
 export async function messageRows(db: Db, runId: number): Promise<MessageRow[]> {
@@ -51,7 +74,8 @@ export async function messageRows(db: Db, runId: number): Promise<MessageRow[]> 
      order by ro.seq`,
     [runId],
   );
-  return rows.map((r) => ({
+  return rows.map((r) => {
+    const base = {
     order_id: Number(r.order_id),
     customer_id: Number(r.customer_id),
     value: Number(r.value),
@@ -78,7 +102,10 @@ export async function messageRows(db: Db, runId: number): Promise<MessageRow[]> 
     converted_via: r.converted_via,
     outcome: r.final_outcome,
     lifecycle: r.lifecycle_state,
-  }));
+    };
+    const [status, status_tone] = statusOf(base);
+    return { ...base, status, status_tone };
+  });
 }
 
 export async function runOptions(db: Db) {

@@ -30,14 +30,14 @@ export const BASE_CONVERSION: Record<HiddenType, Record<Action, number>> = {
 };
 
 export const CATEGORIES = [
+  'Vitamin C serum',
   'Ashwagandha gummies',
-  'Plant protein',
-  'Daily multivitamin',
-  'Green tea',
-  'Omega-3 capsules',
-  'Collagen powder',
+  'Rosemary hair oil',
+  'Marine collagen',
+  'SPF 50 sunscreen',
+  'Biotin gummies',
+  'Night repair cream',
   'Electrolyte mix',
-  'Sleep support',
 ];
 
 /** Visible customer state (what the merchant and the model can see). */

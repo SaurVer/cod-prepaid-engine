@@ -7,5 +7,5 @@ export const dynamic = 'force-dynamic';
 export async function PATCH(req: Request) {
   const role = await getRole();
   const b = (await req.json()) as { runId: number; orderId: number; text: string };
-  return handle(() => editMessage(getDb(), Number(b.runId), Number(b.orderId), String(b.text ?? ''), role), { tick: false });
+  return handle(() => editMessage(getDb(), Number(b.runId), Number(b.orderId), String(b.text ?? ''), role));
 }

@@ -1,8 +1,8 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { tick } from './clock.ts';
 import { getDb } from './db.ts';
-import { UserError } from './pipeline.ts';
+import { sync } from './sync.ts';
+import { UserError } from './errors.ts';
 
 export type Role = 'owner' | 'analyst';
 
@@ -12,13 +12,13 @@ export async function getRole(): Promise<Role> {
 }
 
 /** Run a handler after a lazy clock tick, mapping user errors to 400s. */
-export async function handle(fn: () => Promise<unknown>, opts: { tick?: boolean } = { tick: true }) {
+export async function handle(fn: () => Promise<unknown>, opts: { sync?: boolean } = {}) {
   try {
-    if (opts.tick !== false) {
+    if (opts.sync) {
       try {
-        await tick(getDb());
+        await sync(getDb());
       } catch (e) {
-        console.error('tick failed', e);
+        console.error('sync failed', e);
       }
     }
     const out = await fn();

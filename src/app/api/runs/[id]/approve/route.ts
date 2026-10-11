@@ -8,5 +8,5 @@ export const maxDuration = 60;
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   const role = await getRole();
-  return handle(() => approveAndSend(getDb(), Number(id), role));
+  return handle(() => approveAndSend(getDb(), Number(id), role), { sync: true });
 }

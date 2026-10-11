@@ -4,7 +4,9 @@
 import type { Action } from '../core/decide.ts';
 import { type ModelBundle, type ModelMetrics, type TrainingRow, toVector, trainBundle } from '../core/model.ts';
 import type { Db } from './db.ts';
-import { MERCHANT_ID } from './settings.ts';
+import { MERCHANT_ID, audit, notify } from './settings.ts';
+import { FEATURE_NAMES, MODEL_KEYS, auc as aucOf, evaluate, fitScaler, setLR, splitByTime, trainOne } from '../core/model.ts';
+import { UserError } from './errors.ts';
 
 export async function trainingRows(db: Db): Promise<TrainingRow[]> {
   const rows = await db.query(
@@ -84,4 +86,135 @@ export async function loadModel(db: Db, version: number): Promise<ModelBundle> {
   if (!r) throw new Error(`Model v${version} not found`);
   cache.set(version, r.weights as ModelBundle);
   return r.weights as ModelBundle;
+}
+
+// ---------- Model page: versions, daily diagnostics, retrain (chunked) and promote ----------
+
+
+export async function modelVersions(db: Db) {
+  return db.query(
+    `select version, status, trained_at, trained_real_at, training_rows, metrics, promoted_at from model_versions order by version desc`,
+  );
+}
+
+export interface DayDiagnostic {
+  run_id: number;
+  date: string;
+  model_version: number;
+  scored: number;
+  none: number;
+  nudge: number;
+  discount: number;
+  sent: number;
+  predicted_paid: number | null;
+  actual_paid: number | null;
+  window_closed: boolean;
+  auc: number | null;
+  expected_gain: number;
+}
+
+export async function dailyDiagnostics(db: Db): Promise<DayDiagnostic[]> {
+  const runs = await db.query(
+    `select id, source_batch_ids, model_version from runs where not is_pilot and status in ('sent', 'closed') order by id`,
+  );
+  if (!runs.length) return [];
+  const rows = await db.query(
+    `select ro.run_id, ro.assignment_group, d.chosen_action, d.gain_nudge, d.gain_discount,
+       p.p_convert_none, p.p_convert_nudge, p.p_convert_discount,
+       (s.id is not null) as sent, (o.converted_at is not null and o.converted_via <> 'organic') as paid, o.dispatched
+     from run_orders ro
+     join decisions d on d.run_id = ro.run_id and d.order_id = ro.order_id
+     join predictions p on p.run_id = ro.run_id and p.order_id = ro.order_id
+     join orders o on o.id = ro.order_id
+     left join sends s on s.run_id = ro.run_id and s.order_id = ro.order_id
+     where ro.run_id = any($1::int[])`,
+    [runs.map((r) => Number(r.id))],
+  );
+  return runs.map((r) => {
+    const rs = rows.filter((x) => Number(x.run_id) === Number(r.id));
+    const model = rs.filter((x) => x.assignment_group === 'model');
+    const sent = rs.filter((x) => x.sent);
+    const pOf = (x: any) => Number(x[`p_convert_${x.chosen_action}`]);
+    const closed = sent.length > 0 && sent.every((x) => x.dispatched || x.paid);
+    return {
+      run_id: Number(r.id),
+      date: r.source_batch_ids?.[0],
+      model_version: Number(r.model_version),
+      scored: rs.length,
+      none: model.filter((x) => x.chosen_action === 'none').length,
+      nudge: model.filter((x) => x.chosen_action === 'nudge').length,
+      discount: model.filter((x) => x.chosen_action === 'discount').length,
+      sent: sent.length,
+      predicted_paid: sent.length ? sent.reduce((a, x) => a + pOf(x), 0) / sent.length : null,
+      actual_paid: sent.length ? sent.filter((x) => x.paid).length / sent.length : null,
+      window_closed: closed,
+      auc: closed ? aucOf(sent.map(pOf), sent.map((x) => (x.paid ? 1 : 0))) : null,
+      expected_gain: model.reduce(
+        (a, x) => a + (x.chosen_action === 'nudge' ? Number(x.gain_nudge) : x.chosen_action === 'discount' ? Number(x.gain_discount) : 0),
+        0,
+      ),
+    };
+  });
+}
+
+/** Start a retrain job; returns the job. One model is trained per call so progress is real. */
+export async function startRetrain(db: Db, role: string) {
+  const running = await db.query(`select * from training_jobs where status = 'running' order by id desc limit 1`);
+  if (running.length) return running[0];
+  const [{ v }] = await db.query(`select coalesce(max(version), 0) + 1 as v from model_versions`);
+  const [job] = await db.query(
+    `insert into training_jobs (merchant_id, version, step, total_steps, status, partial)
+     values (1, $1, 0, $2, 'running', '{}'::jsonb) returning *`,
+    [v, MODEL_KEYS.length + 1],
+  );
+  await audit(db, role, 'retrain_started', `model:v${v}`, null, null);
+  return job;
+}
+
+export async function trainingStep(db: Db) {
+  const [job] = await db.query(`select * from training_jobs where status = 'running' order by id desc limit 1`);
+  if (!job) return { status: 'idle' };
+  const rows = await trainingRows(db);
+  const { train, valid } = splitByTime(rows);
+  const partial: any = job.partial && Object.keys(job.partial).length ? job.partial : { scaler: fitScaler(train.map((r) => r.x)) };
+  const step = Number(job.step);
+  if (step < MODEL_KEYS.length) {
+    const key = MODEL_KEYS[step];
+    setLR(partial, key, trainOne(key, train, partial.scaler));
+    await db.query(`update training_jobs set step = step + 1, partial = $2::jsonb where id = $1`, [job.id, JSON.stringify(partial)]);
+    return { status: 'running', step: step + 1, total: Number(job.total_steps), trained: key };
+  }
+  const bundle = { ...partial, features: [...FEATURE_NAMES] };
+  const metrics = evaluate(bundle, valid, train.length);
+  const [{ sim_now }] = await db.query(`select sim_now from system_settings where id = 1`);
+  await db.query(
+    `insert into model_versions (version, merchant_id, trained_at, training_rows, metrics, weights, status)
+     values ($1, 1, $2, $3, $4::jsonb, $5::jsonb, 'candidate')`,
+    [job.version, sim_now, metrics.train_rows, JSON.stringify(metrics), JSON.stringify(bundle)],
+  );
+  const ids = rows.map((r) => r.order_id);
+  for (let i = 0; i < ids.length; i += 10000) {
+    await db.query(`update orders set used_in_training_version = $1 where id = any($2::bigint[]) and used_in_training_version is null`, [
+      job.version,
+      ids.slice(i, i + 10000),
+    ]);
+  }
+  await db.query(`update training_jobs set step = total_steps, status = 'done' where id = $1`, [job.id]);
+  await notify(db, 'model_trained', `Model v${job.version} is trained and ready to compare`, '/model');
+  return { status: 'done', version: Number(job.version) };
+}
+
+export async function promoteModel(db: Db, version: number, role: string) {
+  if (role !== 'owner') throw new UserError('Only the Owner can promote a model.');
+  return db.tx(async (t) => {
+    const [m] = await t.query(`select * from model_versions where version = $1`, [version]);
+    if (!m) throw new UserError('Model not found.');
+    if (m.status === 'active') return { ok: true };
+    const [before] = await t.query(`select active_model_version from merchant_settings where merchant_id = 1`);
+    await t.query(`update model_versions set status = 'retired' where status = 'active'`);
+    await t.query(`update model_versions set status = 'active', promoted_at = (select sim_now from system_settings where id = 1) where version = $1`, [version]);
+    await t.query(`update merchant_settings set active_model_version = $1 where merchant_id = 1`, [version]);
+    await audit(t, role, 'promote_model', `model:v${version}`, { active: before?.active_model_version }, { active: version });
+    return { ok: true };
+  });
 }

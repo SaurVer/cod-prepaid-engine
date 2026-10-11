@@ -137,49 +137,156 @@ export async function rtoRates(db: Db) {
   };
 }
 
-export async function overview(db: Db) {
-  const batches = await db.query(
-    `select id, sim_date, total_orders, cod_orders, eligible_orders, arrived_at
-     from order_batches where not is_pilot order by sim_date desc limit 14`,
+export interface DayCampaign {
+  id: number;
+  status: string;
+  created_at: string;
+  order_count: number;
+  progress: number;
+  eta_seconds: number | null;
+  sent: number;
+  opened: number;
+  clicked: number;
+  paid_online: number;
+  expected_gain: number;
+  extra_per_order: number | null;
+  extra_total: number | null;
+  resolved_share: number;
+}
+
+export interface DaySummary {
+  date: string;
+  planned_total: number;
+  total: number;
+  cod: number;
+  prepaid: number;
+  eligible: number;
+  ready: number;
+  messaged: number;
+  paid_after_msg: number;
+  campaigns: DayCampaign[];
+}
+
+/** Per-campaign measured extra profit vs control, computed in SQL from resolved orders. */
+async function campaignStats(db: Db, runIds: number[]): Promise<Map<number, Omit<DayCampaign, 'id' | 'status' | 'created_at' | 'order_count' | 'progress' | 'eta_seconds'>>> {
+  const out = new Map();
+  if (!runIds.length) return out;
+  const groups = await db.query(
+    `select ro.run_id, ro.assignment_group as g, count(*)::int as n, count(o.final_outcome)::int as resolved,
+       avg(case when o.final_outcome = 'cancelled' then 0
+                when o.final_outcome = 'rto' then -(r.settings_snapshot->>'rto_cost')::numeric
+                when o.converted_at is not null then (r.settings_snapshot->>'margin')::numeric - o.discount_paid
+                else (r.settings_snapshot->>'margin')::numeric - (r.settings_snapshot->>'cod_fee')::numeric end
+           - o.message_cost) filter (where o.final_outcome is not null) as avg_value
+     from run_orders ro join orders o on o.id = ro.order_id join runs r on r.id = ro.run_id
+     where ro.run_id = any($1::int[]) and ro.assignment_group in ('model', 'holdout')
+     group by 1, 2`,
+    [runIds],
   );
-  const today = batches[0] ?? null;
+  const funnel = await db.query(
+    `select s.run_id, count(distinct s.id)::int as sent,
+       count(distinct e.send_id) filter (where e.type = 'opened')::int as opened,
+       count(distinct e.send_id) filter (where e.type = 'clicked')::int as clicked,
+       count(distinct e.send_id) filter (where e.type = 'converted')::int as paid_online
+     from sends s left join events e on e.send_id = s.id
+     where s.run_id = any($1::int[]) group by 1`,
+    [runIds],
+  );
+  const gains = await db.query(
+    `select ro.run_id, coalesce(sum(case d.chosen_action when 'nudge' then d.gain_nudge when 'discount' then d.gain_discount else 0 end), 0) as g
+     from run_orders ro join decisions d on d.run_id = ro.run_id and d.order_id = ro.order_id
+     where ro.run_id = any($1::int[]) and ro.assignment_group = 'model' group by 1`,
+    [runIds],
+  );
+  for (const id of runIds) {
+    const m = groups.find((g) => Number(g.run_id) === id && g.g === 'model');
+    const h = groups.find((g) => Number(g.run_id) === id && g.g === 'holdout');
+    const f = funnel.find((x) => Number(x.run_id) === id);
+    const n = (m?.n ?? 0) + (h?.n ?? 0);
+    const resolved = (m?.resolved ?? 0) + (h?.resolved ?? 0);
+    const full = m && h && m.resolved === m.n && h.resolved === h.n;
+    const per = full && m.avg_value != null && h.avg_value != null ? Number(m.avg_value) - Number(h.avg_value) : null;
+    out.set(id, {
+      sent: f?.sent ?? 0,
+      opened: f?.opened ?? 0,
+      clicked: f?.clicked ?? 0,
+      paid_online: f?.paid_online ?? 0,
+      expected_gain: Number(gains.find((g) => Number(g.run_id) === id)?.g ?? 0),
+      extra_per_order: per,
+      extra_total: per == null ? null : per * (m?.n ?? 0),
+      resolved_share: n ? resolved / n : 0,
+    });
+  }
+  return out;
+}
+
+export async function daySummaries(db: Db, limit = 30, only?: string): Promise<DaySummary[]> {
+  const days = await db.query(
+    `with b as (
+       select * from order_batches where not is_pilot ${only ? 'and id = $2' : ''} order by sim_date desc limit $1
+     )
+     select b.id, b.planned_total, b.total_orders, b.cod_orders, b.eligible_orders,
+       count(o.id) filter (where o.payment_mode = 'prepaid')::int as prepaid,
+       count(o.id) filter (where o.eligible and o.lifecycle_state = 'eligible' and o.converted_at is null
+         and not o.dispatched and o.dispatch_deadline > s.sim_now)::int as ready,
+       count(o.id) filter (where o.send_count > 0)::int as messaged,
+       count(o.id) filter (where o.converted_via in ('nudge', 'discount'))::int as paid_after_msg
+     from b join system_settings s on s.id = 1
+     left join orders o on o.batch_id = b.id
+     group by b.id, b.planned_total, b.total_orders, b.cod_orders, b.eligible_orders, b.sim_date
+     order by b.sim_date desc`,
+    only ? [limit, only] : [limit],
+  );
+  const dates = days.map((d) => d.id);
+  const runs = dates.length
+    ? await db.query(
+        `select id, status, created_at, order_count, progress, eta_seconds, source_batch_ids from runs
+         where not is_pilot and source_batch_ids && $1::text[] order by id`,
+        [dates],
+      )
+    : [];
+  const stats = await campaignStats(db, runs.map((r) => Number(r.id)));
+  return days.map((d) => ({
+    date: d.id,
+    planned_total: Number(d.planned_total),
+    total: Number(d.total_orders),
+    cod: Number(d.cod_orders),
+    prepaid: Number(d.prepaid),
+    eligible: Number(d.eligible_orders),
+    ready: Number(d.ready),
+    messaged: Number(d.messaged),
+    paid_after_msg: Number(d.paid_after_msg),
+    campaigns: runs
+      .filter((r) => (r.source_batch_ids ?? []).includes(d.id))
+      .map((r) => ({
+        id: Number(r.id),
+        status: r.status,
+        created_at: r.created_at,
+        order_count: Number(r.order_count),
+        progress: Number(r.progress),
+        eta_seconds: r.eta_seconds,
+        ...stats.get(Number(r.id))!,
+      })),
+  }));
+}
+
+/** COD cost at stake, in plain parts: cash handling + extra returns vs prepaid. */
+export async function codCost(db: Db, eligible: number) {
   const ms = await getMerchantSettings(db);
   const rates = await rtoRates(db);
-  const codCostPerOrder = Number(ms.cod_fee) + (rates.cod_rto_rate - rates.prepaid_rto_rate) * Number(ms.rto_cost);
-  let firstTime = 0;
-  let prepaid = 0;
-  let risk = 0;
-  if (today) {
-    const [c] = await db.query(
-      `select count(*) filter (where payment_mode = 'prepaid')::int as prepaid,
-         count(*) filter (where payment_mode = 'cod' and is_first_time)::int as first_time,
-         count(*) filter (where payment_mode = 'cod' and not is_first_time and rto_risk_flag)::int as risk
-       from orders where batch_id = $1`,
-      [today.id],
-    );
-    firstTime = c.first_time;
-    prepaid = c.prepaid;
-    risk = c.risk;
-  }
+  const gap = Math.max(0, rates.cod_rto_rate - rates.prepaid_rto_rate);
+  const cash = eligible * Number(ms.cod_fee);
+  const returns = eligible * gap * Number(ms.rto_cost);
   return {
-    today,
-    excluded: { first_time: firstTime, prepaid, high_rto_risk: risk },
-    trend: batches
-      .slice()
-      .reverse()
-      .map((b) => ({
-        date: b.sim_date,
-        orders: Number(b.total_orders),
-        cod_share: Number(b.total_orders) ? Number(b.cod_orders) / Number(b.total_orders) : 0,
-      })),
-    money: {
-      eligible: today ? Number(today.eligible_orders) : 0,
-      cod_cost_per_order: codCostPerOrder,
-      at_stake: (today ? Number(today.eligible_orders) : 0) * codCostPerOrder,
-      cod_fee: Number(ms.cod_fee),
-      rto_cost: Number(ms.rto_cost),
-      ...rates,
-    },
+    eligible,
+    cod_fee: Number(ms.cod_fee),
+    rto_cost: Number(ms.rto_cost),
+    cod_rto_rate: rates.cod_rto_rate,
+    prepaid_rto_rate: rates.prepaid_rto_rate,
+    gap,
+    cash,
+    returns,
+    total: cash + returns,
   };
 }
 

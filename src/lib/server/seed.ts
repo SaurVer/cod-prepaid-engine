@@ -5,20 +5,31 @@ import { type Rng, defaultRng, randInt } from '../core/rng.ts';
 import { type HiddenType, PILOT_TYPE_SHARES, TYPE_SHARES, generateRepeatCustomer, pickType } from '../core/sim.ts';
 import type { Db } from './db.ts';
 import { trainAndStore } from './model.ts';
-import { DAY, DEFAULTS, HOUR, MERCHANT_ID, messageCost } from './settings.ts';
-import { type NewOrder, customerStateFromRow, ingestBatch, insertCustomers, insertOrders, resolveUntil } from './simulation.ts';
+import { approveAndSend, createRun, processNext } from './pipeline.ts';
+import { DAY, DEFAULTS, HOUR, MERCHANT_ID, addDays, istDate, istDayStart, messageCost } from './settings.ts';
+import { type NewOrder, customerStateFromRow, insertCustomers, insertOrders, resolveUntil } from './simulation.ts';
+import { fillDay } from './sync.ts';
 
-export const SEED_STEPS = ['reset', 'customers', 'pilot-1', 'pilot-2', 'pilot-3', 'train', 'today'] as const;
+export const SEED_STEPS = [
+  'reset', 'customers', 'pilot-1', 'pilot-2', 'pilot-3', 'train',
+  'history-1', 'history-2', 'history-3', 'history-4', 'history-5', 'history-6', 'today',
+] as const;
 export type SeedStep = (typeof SEED_STEPS)[number];
 
 export const SEED_STEP_LABELS: Record<SeedStep, string> = {
-  reset: 'Clearing data and writing settings',
+  reset: 'Clearing everything and writing settings',
   customers: 'Creating 15,000 customers',
-  'pilot-1': 'Historical pilot: days 1–10',
-  'pilot-2': 'Historical pilot: days 11–20',
-  'pilot-3': 'Historical pilot: days 21–30',
+  'pilot-1': 'Training pilot (before the 30 days): part 1',
+  'pilot-2': 'Training pilot: part 2',
+  'pilot-3': 'Training pilot: part 3',
   train: 'Training model v1 on the pilot',
-  today: "Today's order batch",
+  'history-1': 'Last 30 days: days 1–5 with campaigns',
+  'history-2': 'Last 30 days: days 6–10',
+  'history-3': 'Last 30 days: days 11–15',
+  'history-4': 'Last 30 days: days 16–20',
+  'history-5': 'Last 30 days: days 21–25',
+  'history-6': 'Last 30 days: days 26–29',
+  today: "Today's orders so far",
 };
 
 const N_CUSTOMERS = 15_000;
@@ -26,8 +37,35 @@ const PILOT_DAYS = 30;
 const PILOT_PER_DAY = 500;
 const iso = (ms: number) => new Date(ms).toISOString();
 
-export function simStartMs(): number {
-  return Date.parse(`${DEFAULTS.sim_start_date}T00:00:00Z`);
+/** Today's IST date and the first day of the 30-day history. */
+export function seedDates(nowMs = Date.now()) {
+  const today = istDate(nowMs);
+  const historyStart = addDays(today, -(DEFAULTS.history_days - 1));
+  const pilotStart = addDays(historyStart, -PILOT_DAYS);
+  return { today, historyStart, pilotStart };
+}
+
+async function setEngineTime(db: Db, ms: number) {
+  await db.query(`update system_settings set sim_now = $1 where id = 1`, [iso(ms)]);
+}
+
+/** One seeded history day: orders until 9 PM, an evening campaign (templates, no LLM), the rest of the day. */
+async function seedHistoryDay(db: Db, date: string) {
+  const start = istDayStart(date);
+  const campaignAt = start + DEFAULTS.history_campaign_hour * HOUR;
+  await setEngineTime(db, start);
+  await fillDay(db, date, campaignAt);
+  await resolveUntil(db, campaignAt);
+  await setEngineTime(db, campaignAt);
+  const run = await createRun(db, { batchIds: [date], role: 'owner' });
+  for (let i = 0; i < 50; i++) {
+    const r = await processNext(db, { chunk: 1500, template: true, quiet: true });
+    if (r.status === 'ready_for_review' || r.status === 'idle') break;
+  }
+  await approveAndSend(db, run.id, 'owner', { speed: 'history', quiet: true });
+  await fillDay(db, date, start + DAY);
+  await resolveUntil(db, start + DAY);
+  await setEngineTime(db, start + DAY);
 }
 
 const TABLES = [
@@ -37,7 +75,8 @@ const TABLES = [
 ];
 
 export async function runSeedStep(db: Db, step: SeedStep, rng: Rng = defaultRng): Promise<string> {
-  const start = simStartMs();
+  const { today, historyStart, pilotStart } = seedDates();
+  const start = istDayStart(historyStart);
   switch (step) {
     case 'reset': {
       await db.query(`truncate table ${TABLES.join(', ')} restart identity cascade`);
@@ -58,7 +97,7 @@ export async function runSeedStep(db: Db, step: SeedStep, rng: Rng = defaultRng)
         `insert into system_settings (id, merchant_id, exploration_pct, sim_now, is_live, real_minutes_per_sim_day,
            last_real_tick, sim_started_at, seed_status)
          values (1, $1, $2, $3, true, $4, now(), $3, 'seeding')`,
-        [MERCHANT_ID, DEFAULTS.exploration_pct, iso(start), DEFAULTS.real_minutes_per_sim_day],
+        [MERCHANT_ID, DEFAULTS.exploration_pct, iso(istDayStart(pilotStart)), DEFAULTS.real_minutes_per_sim_day],
       );
       const integrations = [
         ['store_orders', 'Store orders', ['orders.read', 'customers.read']],
@@ -77,7 +116,7 @@ export async function runSeedStep(db: Db, step: SeedStep, rng: Rng = defaultRng)
       await db.query(
         `insert into runs (id, merchant_id, is_pilot, created_by_role, created_at, source_batch_ids, status, settings_snapshot)
          values (0, $1, true, 'owner', $2, '{}'::text[], 'closed', $3::jsonb)`,
-        [MERCHANT_ID, iso(start - PILOT_DAYS * DAY), JSON.stringify({ ...s, exploration_pct: DEFAULTS.exploration_pct })],
+        [MERCHANT_ID, iso(istDayStart(pilotStart)), JSON.stringify({ ...s, exploration_pct: DEFAULTS.exploration_pct })],
       );
       return 'Settings written';
     }
@@ -121,8 +160,8 @@ export async function runSeedStep(db: Db, step: SeedStep, rng: Rng = defaultRng)
       const ro: { order_id: number; seq: number; group: string }[] = [];
       const dec: { order_id: number; action: string; reason: string; discount: number; mcost: number }[] = [];
       for (const d of days) {
-        const day = start - (PILOT_DAYS - d) * DAY;
-        const date = iso(day).slice(0, 10);
+        const date = addDays(pilotStart, d);
+        const day = istDayStart(date) + 12 * HOUR;
         for (let i = 0; i < PILOT_PER_DAY; i++) {
           const type = pickType(rng, PILOT_TYPE_SHARES);
           const list = byType.get(type)!;
@@ -193,15 +232,29 @@ export async function runSeedStep(db: Db, step: SeedStep, rng: Rng = defaultRng)
       return `Model v${v.version} trained on ${v.training_rows} rows`;
     }
 
+    case 'history-1':
+    case 'history-2':
+    case 'history-3':
+    case 'history-4':
+    case 'history-5':
+    case 'history-6': {
+      const part = Number(step.slice(-1)) - 1;
+      const days: string[] = [];
+      for (let i = part * 5; i < Math.min(part * 5 + 5, DEFAULTS.history_days - 1); i++) days.push(addDays(historyStart, i));
+      for (const d of days) await seedHistoryDay(db, d);
+      return `${days.length} days with campaigns (${days[0]} to ${days[days.length - 1]})`;
+    }
+
     case 'today': {
-      const batch = await ingestBatch(db, iso(start).slice(0, 10), start, rng);
-      const now = start + DEFAULTS.sim_start_hour * HOUR;
+      const now = Date.now();
+      await setEngineTime(db, istDayStart(today));
+      const added = await fillDay(db, today, now);
       await resolveUntil(db, now);
       await db.query(
         `update system_settings set sim_now = $1, seed_status = 'ready', last_real_tick = now() where id = 1`,
         [iso(now)],
       );
-      return `Today's batch: ${batch?.total ?? 0} orders`;
+      return `${added.toLocaleString('en-IN')} orders so far today (${today})`;
     }
   }
 }

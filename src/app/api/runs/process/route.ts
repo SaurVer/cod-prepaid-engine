@@ -6,5 +6,5 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 export async function POST() {
-  return handle(() => processNext(getDb()), { tick: false });
+  return handle(() => processNext(getDb()));
 }

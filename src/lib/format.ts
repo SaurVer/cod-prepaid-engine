@@ -1,4 +1,8 @@
-// Display helpers shared by server and client components. Sim time is shown in UTC (the sim's own clock).
+// Display helpers shared by server and client components. All times are shown in IST.
+
+const IST = 5.5 * 3600_000;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export function inr(n: number | null | undefined, digits = 0): string {
   if (n == null || !Number.isFinite(n)) return '—';
@@ -7,7 +11,7 @@ export function inr(n: number | null | undefined, digits = 0): string {
 }
 
 export function num(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return '—';
+  if (n == null || !Number.isFinite(Number(n))) return '—';
   return Number(n).toLocaleString('en-IN');
 }
 
@@ -21,24 +25,54 @@ export function prob(n: number | null | undefined, digits = 3): string {
   return Number(n).toFixed(digits);
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-export function simTime(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  const hh = String(d.getUTCHours()).padStart(2, '0');
-  const mm = String(d.getUTCMinutes()).padStart(2, '0');
-  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}, ${hh}:${mm}`;
+function ist(iso: string): Date {
+  return new Date(Date.parse(iso) + IST);
 }
 
-export function simDate(isoOrDate: string | null | undefined): string {
-  if (!isoOrDate) return '—';
-  const d = new Date(isoOrDate.length === 10 ? `${isoOrDate}T00:00:00Z` : isoOrDate);
+/** "5:40 PM" */
+export function timeIST(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = ist(iso);
+  let h = d.getUTCHours();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${String(d.getUTCMinutes()).padStart(2, '0')} ${ampm}`;
+}
+
+/** "11 Oct, 5:40 PM" */
+export function dateTimeIST(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = ist(iso);
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}, ${timeIST(iso)}`;
+}
+
+/** "11 Oct" from a YYYY-MM-DD date key */
+export function dayLabel(date: string | null | undefined): string {
+  if (!date) return '—';
+  const d = new Date(`${date}T00:00:00Z`);
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
 }
 
+/** "Sat" */
+export function weekday(date: string): string {
+  return WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()];
+}
+
+/** Today's IST date key */
+export function todayIST(now = Date.now()): string {
+  return new Date(now + IST).toISOString().slice(0, 10);
+}
+
+/** Back-compat alias used by older components */
+export const simDate = dayLabel;
+export const simTime = dateTimeIST;
+
 export function orderCode(id: number | string): string {
-  return `VD-${String(id).padStart(6, '0')}`;
+  return `DL-${String(id).padStart(6, '0')}`;
+}
+
+export function campaignName(createdAt: string): string {
+  return `Campaign · ${dateTimeIST(createdAt)}`;
 }
 
 export function duration(seconds: number | null | undefined): string {
@@ -47,21 +81,27 @@ export function duration(seconds: number | null | undefined): string {
   return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
 }
 
-export const ACTION_LABEL: Record<string, string> = { none: 'No action', nudge: 'Nudge', discount: 'Discount' };
-export const GROUP_LABEL: Record<string, string> = { model: 'Model', holdout: 'Holdout', explore: 'Explore' };
+// Plain-language labels (spec Appendix G)
+export const ACTION_LABEL: Record<string, string> = { none: 'No message', nudge: 'Reminder', discount: '₹50 off offer' };
+export const ACTION_LONG: Record<string, string> = {
+  none: 'No message',
+  nudge: 'Reminder (no discount)',
+  discount: '₹50 off offer',
+};
+export const GROUP_LABEL: Record<string, string> = { model: 'AI-picked', holdout: 'Control group', explore: 'Random test' };
 export const REASON_LABEL: Record<string, string> = {
-  best_gain: 'Best gain',
-  no_positive_gain: 'No positive gain',
-  cap_applied: 'Cap applied',
-  holdout: 'Holdout',
-  explore: 'Explore',
+  best_gain: 'Highest expected extra profit',
+  no_positive_gain: 'No message earns more than doing nothing',
+  cap_applied: 'Offer above the max discount',
+  holdout: 'Control group (kept for measurement)',
+  explore: 'Random test (keeps the model learning)',
 };
 export const STATUS_LABEL: Record<string, string> = {
   queued: 'Queued',
-  scoring: 'Scoring',
-  deciding: 'Deciding',
-  drafting: 'Drafting',
-  ready_for_review: 'Ready for review',
+  scoring: 'Scoring orders',
+  deciding: 'Choosing actions',
+  drafting: 'Writing messages',
+  ready_for_review: 'Ready to review',
   approved: 'Approved',
   sent: 'Sent',
   closed: 'Closed',
@@ -69,17 +109,18 @@ export const STATUS_LABEL: Record<string, string> = {
 };
 export const CHANNEL_LABEL: Record<string, string> = { whatsapp: 'WhatsApp', mobile_inbox: 'Mobile inbox' };
 export const LIFECYCLE_LABEL: Record<string, string> = {
-  new: 'New',
-  eligible: 'Eligible',
-  in_run: 'In run',
+  new: 'Not eligible',
+  eligible: 'Waiting for a campaign',
+  in_run: 'In a campaign',
   decided: 'Decided',
-  holdout: 'Holdout',
+  holdout: 'Control group',
   message_drafted: 'Message drafted',
   approved: 'Approved',
-  sent: 'Sent',
-  converted: 'Converted',
-  not_converted: 'Not converted',
+  sent: 'Message sent',
+  converted: 'Paid online',
+  not_converted: 'Stayed COD',
   delivered: 'Delivered',
-  rto: 'RTO',
+  rto: 'Returned (RTO)',
   cancelled: 'Cancelled',
 };
+export const OUTCOME_LABEL: Record<string, string> = { delivered: 'Delivered', rto: 'Returned (RTO)', cancelled: 'Cancelled' };

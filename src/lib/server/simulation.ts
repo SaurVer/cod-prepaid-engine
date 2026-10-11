@@ -194,18 +194,26 @@ export async function insertPending(db: Db, rows: Pending[]): Promise<void> {
   );
 }
 
-/** Ingest one sim day's order batch. Returns null if that day already arrived. */
-export async function ingestBatch(db: Db, date: string, atMs: number, rng: Rng = defaultRng) {
-  const exists = await db.query('select 1 from order_batches where id = $1', [date]);
-  if (exists.length) return null;
+/** Create the batch row for an IST date if it does not exist yet. Returns it. */
+export async function ensureDay(db: Db, date: string, arrivedAt: number, rng: Rng = defaultRng) {
+  const existing = await db.query('select * from order_batches where id = $1', [date]);
+  if (existing.length) return existing[0];
+  const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
+  let planned = randInt(rng, 2000, 5000);
+  if (dow === 0 || dow === 6) planned = Math.round(planned * 1.1);
+  const [row] = await db.query(
+    `insert into order_batches (id, merchant_id, sim_date, is_pilot, total_orders, cod_orders, eligible_orders, arrived_at, planned_total)
+     values ($1, $2, $3::date, false, 0, 0, 0, $4, $5) returning *`,
+    [date, MERCHANT_ID, date, iso(arrivedAt), planned],
+  );
+  return row;
+}
 
-  const dow = new Date(atMs).getUTCDay();
-  const weekend = dow === 0 || dow === 6;
-  let n = randInt(rng, 2000, 5000);
-  if (weekend) n = Math.round(n * 1.1);
-  const nRepeat = Math.round(n * uniform(rng, 0.55, 0.65));
-  const nNew = n - nRepeat;
-
+/** Add `count` orders to a day, placed uniformly between fromMs and toMs. */
+export async function addOrders(db: Db, date: string, count: number, fromMs: number, toMs: number, rng: Rng = defaultRng) {
+  if (count <= 0) return { added: 0, cod: 0, eligible: 0 };
+  const nRepeat = Math.round(count * uniform(rng, 0.55, 0.65));
+  const nNew = count - nRepeat;
   const pool = await db.query(
     `select c.*, t.hidden_type from customers c join customer_truth t on t.customer_id = c.id
      where c.delivered_orders >= 1
@@ -218,47 +226,54 @@ export async function ingestBatch(db: Db, date: string, atMs: number, rng: Rng =
   let nextCustomer = Number(max_c) + 1;
   let nextOrder = Number(max_o) + 1;
 
+  const placedTimes = Array.from({ length: pool.length + nNew }, () => Math.round(uniform(rng, fromMs, toMs))).sort(
+    (x, y) => x - y,
+  );
   const newCustomers: { id: number; state: CustomerState; type: HiddenType; createdAt: number; lastOrderAt: null }[] = [];
   for (let i = 0; i < nNew; i++) {
     newCustomers.push({
       id: nextCustomer++,
       state: generateFirstTimeCustomer(rng),
       type: pickType(rng, TYPE_SHARES),
-      createdAt: atMs,
+      createdAt: fromMs,
       lastOrderAt: null,
     });
   }
   await insertCustomers(db, newCustomers);
 
-  const placed = atMs;
-  const deadline = atMs + DAY;
   const orders: NewOrder[] = [];
   const draws: { order_id: number; d: Draws }[] = [];
   const pending: Pending[] = [];
+  const shuffled = [
+    ...pool.map((c) => ({ id: Number(c.id), row: c as Row | null, state: null as CustomerState | null, type: c.hidden_type as HiddenType, first: false })),
+    ...newCustomers.map((c) => ({ id: c.id, row: null as Row | null, state: c.state, type: c.type, first: true })),
+  ].sort(() => rng() - 0.5);
 
-  const addOrder = (customerId: number, state: CustomerState, type: HiddenType, firstTime: boolean) => {
+  shuffled.forEach((c, i) => {
+    const placed = placedTimes[i];
+    const state = c.state ?? customerStateFromRow(c.row, placed);
     const id = nextOrder++;
     const value = orderValue(rng);
-    const codP = firstTime ? 0.6 : 0.64 * codShare(state);
+    const codP = c.first ? 0.6 : 0.64 * codShare(state);
     const mode: 'cod' | 'prepaid' = rng() < codP ? 'cod' : 'prepaid';
-    const risk = !firstTime && rtoRiskFlag(state);
+    const risk = !c.first && rtoRiskFlag(state);
     let reason: string | null = null;
     if (mode === 'prepaid') reason = 'Prepaid order';
-    else if (firstTime) reason = 'First-time customer';
-    else if (risk) reason = 'High RTO risk';
+    else if (c.first) reason = 'First-time customer';
+    else if (risk) reason = 'High return risk';
     const eligible = reason === null;
     orders.push({
       id,
       batch_id: date,
-      customer_id: customerId,
+      customer_id: c.id,
       value,
       payment_mode: mode,
-      is_first_time: firstTime,
+      is_first_time: c.first,
       eligible,
       ineligible_reason: reason,
       rto_risk_flag: risk,
       placed_at: placed,
-      dispatch_deadline: deadline,
+      dispatch_deadline: placed + DAY,
       lifecycle_state: eligible ? 'eligible' : 'new',
       features: snapshotFor(state, value),
     });
@@ -266,7 +281,7 @@ export async function ingestBatch(db: Db, date: string, atMs: number, rng: Rng =
       const d = makeDraws(rng);
       draws.push({ order_id: id, d });
       // Some customers switch to prepaid on their own before dispatch.
-      if (d.u_conv < trueConversion(type, 'none', state.delivered_orders, d.u_noise)) {
+      if (d.u_conv < trueConversion(c.type, 'none', state.delivered_orders, d.u_noise)) {
         pending.push({
           due_at: placed + (1 + 20 * d.u_time) * HOUR,
           kind: 'conversion',
@@ -276,22 +291,20 @@ export async function ingestBatch(db: Db, date: string, atMs: number, rng: Rng =
         });
       }
     }
-  };
+  });
 
-  for (const c of pool) addOrder(Number(c.id), customerStateFromRow(c, atMs), c.hidden_type, false);
-  for (const c of newCustomers) addOrder(c.id, c.state, c.type, true);
-
-  const cod = orders.filter((o) => o.payment_mode === 'cod').length;
-  const eligibleCount = orders.filter((o) => o.eligible).length;
-  await db.query(
-    `insert into order_batches (id, merchant_id, sim_date, is_pilot, total_orders, cod_orders, eligible_orders, arrived_at)
-     values ($1, $2, $3::date, false, $4, $5, $6, $7)`,
-    [date, MERCHANT_ID, date, orders.length, cod, eligibleCount, iso(atMs)],
-  );
   for (let i = 0; i < orders.length; i += 2500) await insertOrders(db, orders.slice(i, i + 2500));
   await insertDraws(db, draws);
   await insertPending(db, pending);
-  return { date, total: orders.length, cod, eligible: eligibleCount };
+  const cod = orders.filter((o) => o.payment_mode === 'cod').length;
+  const eligibleCount = orders.filter((o) => o.eligible).length;
+  await db.query(
+    `update order_batches set total_orders = total_orders + $2, cod_orders = cod_orders + $3,
+       eligible_orders = eligible_orders + $4, last_order_at = greatest(coalesce(last_order_at, $5), $5)
+     where id = $1`,
+    [date, orders.length, cod, eligibleCount, iso(placedTimes[placedTimes.length - 1] ?? toMs)],
+  );
+  return { added: orders.length, cod, eligible: eligibleCount };
 }
 
 /** Resolve everything due up to `untilMs`: engagement events, conversions, dispatch, outcomes. */
@@ -474,7 +487,21 @@ export interface SentOrder {
 }
 
 /** Simulate what happens after a send: delivered, opened, clicked, converted (same sim day, before dispatch). */
-export async function simulateSends(db: Db, sent: SentOrder[], sentAtMs: number, rng: Rng = defaultRng): Promise<void> {
+/**
+ * 'live' sends (made from the app) get customer responses within a few minutes so the merchant can watch them;
+ * 'history' sends (seeded days) use realistic timings over hours.
+ */
+export async function simulateSends(
+  db: Db,
+  sent: SentOrder[],
+  sentAtMs: number,
+  speed: 'live' | 'history' = 'live',
+  rng: Rng = defaultRng,
+): Promise<void> {
+  const SEC = 1000;
+  const t = speed === 'live'
+    ? { delivered: [2 * SEC, 6 * SEC], open: [8 * SEC, 100 * SEC], click: [4 * SEC, 40 * SEC], convert: [4 * SEC, 30 * SEC] }
+    : { delivered: [60 * SEC, 60 * SEC], open: [0.1 * HOUR, 3 * HOUR], click: [0.03 * HOUR, 0.5 * HOUR], convert: [0.02 * HOUR, 0.3 * HOUR] };
   if (!sent.length) return;
   // The message now drives behaviour; drop any self-conversion that had not happened yet.
   await db.query(`delete from sim_pending where kind = 'conversion' and order_id = any($1::bigint[])`, [
@@ -488,16 +515,16 @@ export async function simulateSends(db: Db, sent: SentOrder[], sentAtMs: number,
     // resend: fresh draws for engagement
     const d = s.attempt >= 2 ? { ...s.draws, u_open: rng(), u_click: rng() } : s.draws;
     const eng = engagement(conv, s.channel, d);
-    const tDelivered = cap(sentAtMs + 60_000);
+    const tDelivered = cap(sentAtMs + uniform(rng, t.delivered[0], t.delivered[1]));
     pending.push({ due_at: tDelivered, kind: 'event', order_id: s.order_id, send_id: s.send_id, payload: { type: 'delivered' } });
     if (eng.opened) {
-      const tOpen = cap(tDelivered + uniform(rng, 0.1, 3) * HOUR);
+      const tOpen = cap(tDelivered + uniform(rng, t.open[0], t.open[1]));
       pending.push({ due_at: tOpen, kind: 'event', order_id: s.order_id, send_id: s.send_id, payload: { type: 'opened' } });
       if (eng.clicked) {
-        const tClick = cap(tOpen + uniform(rng, 0.03, 0.5) * HOUR);
+        const tClick = cap(tOpen + uniform(rng, t.click[0], t.click[1]));
         pending.push({ due_at: tClick, kind: 'event', order_id: s.order_id, send_id: s.send_id, payload: { type: 'clicked' } });
         if (conv) {
-          const tConv = cap(tClick + uniform(rng, 0.02, 0.3) * HOUR);
+          const tConv = cap(tClick + uniform(rng, t.convert[0], t.convert[1]));
           pending.push({
             due_at: tConv,
             kind: 'conversion',
