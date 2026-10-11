@@ -218,8 +218,25 @@ export function RefreshButton({ light = false }: { light?: boolean }) {
         <svg viewBox="0 0 24 24" className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth={2}>
           <path d="M20 12a8 8 0 11-2.3-5.6M20 4v5h-5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        {refreshing ? 'Refreshing…' : 'Refresh'}
+        {refreshing ? 'Updating…' : 'Refresh'}
       </button>
     </div>
   );
+}
+
+/**
+ * Opening the Overview pulls orders that arrived since the last visit, in the background (at most every 30 s),
+ * so the page shows at once and updates when the new orders are in.
+ */
+export function SyncIfStale({ maxAgeMs = 30_000 }: { maxAgeMs?: number }) {
+  const { state, refreshAll } = useLive();
+  const done = useRef(false);
+  useEffect(() => {
+    if (done.current) return;
+    done.current = true;
+    const last = state?.last_synced ? Date.parse(state.last_synced) : 0;
+    if (Date.now() - last > maxAgeMs) refreshAll({ quiet: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
 }
