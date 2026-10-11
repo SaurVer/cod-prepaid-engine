@@ -5,6 +5,7 @@ export interface MessageRow {
   customer_id: number;
   value: number;
   batch_id: string;
+  placed_at: string;
   group: string | null;
   is_resend: boolean;
   send_count: number;
@@ -53,7 +54,7 @@ function statusOf(r: Omit<MessageRow, 'status' | 'status_tone'>): [string, Messa
 
 export async function messageRows(db: Db, runId: number): Promise<MessageRow[]> {
   const rows = await db.query(
-    `select ro.order_id, o.customer_id, o.value, o.batch_id, ro.assignment_group, ro.is_resend, o.send_count,
+    `select ro.order_id, o.customer_id, o.value, o.batch_id, o.placed_at, ro.assignment_group, ro.is_resend, o.send_count,
        d.chosen_action, d.discount_applied, d.gain_nudge, d.gain_discount, o.features->>'channel' as channel,
        case when o.features->>'channel' = 'whatsapp' then c.consent_whatsapp else c.consent_inbox end as consent,
        m.final_text, m.edited_text, m.variant_tag, m.fallback_used, m.review,
@@ -81,6 +82,7 @@ export async function messageRows(db: Db, runId: number): Promise<MessageRow[]> 
     value: Number(r.value),
     batch_id: r.batch_id,
     group: r.assignment_group,
+    placed_at: r.placed_at,
     is_resend: Boolean(r.is_resend),
     send_count: Number(r.send_count),
     action: r.chosen_action,

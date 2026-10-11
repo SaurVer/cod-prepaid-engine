@@ -11,7 +11,7 @@ import {
 } from '@tanstack/react-table';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-import { ACTION_LABEL, CHANNEL_LABEL, GROUP_LABEL, inr, num, orderCode } from '@/lib/format';
+import { ACTION_LABEL, CHANNEL_LABEL, GROUP_LABEL, dateTimeIST, inr, num, orderCode } from '@/lib/format';
 import type { MessageRow } from '@/lib/server/messages.ts';
 import { api, useLive } from './live';
 import { ACTION_TONE, Badge, GROUP_TONE } from './ui';
@@ -76,6 +76,28 @@ export function CampaignGrid({ runId, editable, rows: initialRows, initialAction
   const [status, setStatus] = useState('');
   const [sorting, setSorting] = useState<SortingState>([]);
 
+  const { toast } = useLive();
+  const router = useRouter();
+  // Orders that can still be chosen to send: drafted, not yet sent.
+  const choosable = (r: MessageRow) => editable && Boolean(r.text) && !r.sent;
+  const setIncluded = async (ids: number[], include: boolean) => {
+    if (!ids.length) return;
+    const before = rows;
+    const set = new Set(ids);
+    setRows((rs) => rs.map((r) => (set.has(r.order_id) ? { ...r, review: include ? 'pending' : 'rejected' } : r)));
+    try {
+      await api('/api/messages', { method: 'PATCH', json: { runId, orderIds: ids, include } });
+      router.refresh();
+    } catch (e) {
+      setRows(before);
+      toast(e instanceof Error ? e.message : 'Could not update', 'error');
+    }
+  };
+  const groupStats = (g: string) => {
+    const rs = rows.filter((r) => r.group === g && choosable(r));
+    return { ids: rs.map((r) => r.order_id), on: rs.filter((r) => r.review !== 'rejected').length, n: rs.length };
+  };
+
   const statuses = useMemo(() => Array.from(new Set(initialRows.map((r) => r.status))).sort(), [initialRows]);
   const filtered = useMemo(
     () => rows.filter((r) => (!action || r.action === action) && (!group || r.group === group) && (!status || r.status === status)),
@@ -84,7 +106,29 @@ export function CampaignGrid({ runId, editable, rows: initialRows, initialAction
 
   const columns = useMemo<ColumnDef<MessageRow>[]>(
     () => [
+      ...(editable
+        ? [
+            {
+              id: 'send',
+              header: 'Send',
+              enableSorting: false,
+              cell: ({ row }: { row: { original: MessageRow } }) =>
+                choosable(row.original) ? (
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-[#305EFF]"
+                    checked={row.original.review !== 'rejected'}
+                    onChange={(e) => setIncluded([row.original.order_id], e.target.checked)}
+                    aria-label="Send this message"
+                  />
+                ) : (
+                  <span className="text-ink-faint">—</span>
+                ),
+            } as ColumnDef<MessageRow>,
+          ]
+        : []),
       { accessorKey: 'order_id', header: 'Order', cell: (c) => <span className="font-mono text-[12px]">{orderCode(c.getValue<number>())}</span> },
+      { accessorKey: 'placed_at', header: 'Ordered', cell: (c) => <span className="text-ink-soft">{dateTimeIST(c.getValue<string>())}</span> },
       { accessorKey: 'customer_id', header: 'Customer', cell: (c) => <span className="font-mono text-[12px] text-ink-soft">C{c.getValue<number>()}</span> },
       { accessorKey: 'value', header: 'Order value', cell: (c) => inr(c.getValue<number>()) },
       {
@@ -137,7 +181,8 @@ export function CampaignGrid({ runId, editable, rows: initialRows, initialAction
         ),
       },
     ],
-    [runId, editable],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [runId, editable, rows],
   );
 
   const table = useReactTable({
@@ -184,6 +229,32 @@ export function CampaignGrid({ runId, editable, rows: initialRows, initialAction
           {num(filtered.length)} of {num(rows.length)} orders
         </span>
       </div>
+      {editable && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-line bg-panel/60 px-4 py-2.5 text-[12.5px]">
+          <span className="mr-1 font-medium text-ink">Choose who gets a message:</span>
+          {(['model', 'explore'] as const).map((g) => {
+            const st = groupStats(g);
+            if (!st.n) return null;
+            const all = st.on === st.n;
+            return (
+              <button
+                key={g}
+                onClick={() => setIncluded(st.ids, !all)}
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 transition-colors ${
+                  all ? 'border-rzp bg-rzp-soft text-rzp' : st.on ? 'border-rzp/40 bg-white text-ink' : 'border-line bg-white text-ink-faint'
+                }`}
+                title={all ? 'Click to send none of these' : 'Click to send all of these'}
+              >
+                <span className={`flex h-3.5 w-3.5 items-center justify-center rounded-sm border text-[10px] leading-none ${all ? 'border-rzp bg-rzp text-white' : 'border-ink-faint/50'}`}>
+                  {all ? '✓' : st.on ? '–' : ''}
+                </span>
+                {GROUP_LABEL[g]} · {num(st.on)} of {num(st.n)}
+              </button>
+            );
+          })}
+          <span className="ml-auto text-ink-faint">Untick any order to leave it out. Control-group orders never get a message.</span>
+        </div>
+      )}
       <div className="overflow-auto">
         <table className="table-base">
           <thead>
