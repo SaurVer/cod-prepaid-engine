@@ -6,7 +6,7 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter', weight: ['40
 const mono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-mono' });
 
 export const metadata: Metadata = {
-  title: 'Dewlune · COD to Prepaid',
+  title: 'PayShift · COD to Prepaid · Elvora',
   description: 'COD-to-Prepaid Decision Engine — concept prototype on synthetic data',
 };
 

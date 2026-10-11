@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ConceptLabel, DewluneMark, PoweredByRazorpay } from '@/components/logos';
+import { ConceptLabel, BrandMark, PoweredByRazorpay } from '@/components/logos';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,7 +7,7 @@ export default function InspectorLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen bg-canvas">
       <header className="flex h-14 items-center gap-3 bg-rzp-navy px-6 text-white">
-        <DewluneMark size={26} />
+        <BrandMark size={26} />
         <span className="text-[14px] font-semibold">Decision Inspector</span>
         <span className="text-[12px] text-white/55">Why the AI chose what it chose, step by step</span>
         <div className="ml-auto flex items-center gap-4">

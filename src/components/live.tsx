@@ -5,6 +5,7 @@
 
 import { useRouter } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { timeIST } from '@/lib/format';
 import type { AppState } from '@/lib/server/state.ts';
 
 interface Toast {
@@ -199,5 +200,26 @@ export function TrackResponses({ untilIso, everyMs = 8000 }: { untilIso: string 
     <span className="pill bg-rzp-soft text-rzp">
       <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-rzp" /> Customer responses arriving · auto-updating
     </span>
+  );
+}
+
+/** Refresh: pull new orders, customer responses and deliveries. Lives on the Overview only. */
+export function RefreshButton({ light = false }: { light?: boolean }) {
+  const { state, refreshAll, refreshing } = useLive();
+  return (
+    <div className="flex items-center gap-2">
+      <span className={`text-[12px] ${light ? 'text-white/60' : 'text-ink-faint'}`}>Updated {timeIST(state?.last_synced)}</span>
+      <button
+        className={`btn btn-sm ${light ? '!border-white/20 !bg-white/10 !text-white hover:!bg-white/20' : ''}`}
+        onClick={() => refreshAll()}
+        disabled={refreshing}
+        title="Pull new orders, customer responses and deliveries"
+      >
+        <svg viewBox="0 0 24 24" className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth={2}>
+          <path d="M20 12a8 8 0 11-2.3-5.6M20 4v5h-5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        {refreshing ? 'Refreshing…' : 'Refresh'}
+      </button>
+    </div>
   );
 }

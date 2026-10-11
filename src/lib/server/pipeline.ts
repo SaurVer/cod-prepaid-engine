@@ -10,17 +10,21 @@ import { draftMessages } from './llm-client.ts';
 import { loadModel } from './model.ts';
 import {
   type SettingsSnapshot,
+  DEFAULTS,
+  HOUR,
   MERCHANT_ID,
   audit,
   economicsFor,
   getMerchant,
   getMerchantSettings,
   getSystemSettings,
+  istDate,
+  istDayStart,
   messageCost,
   notify,
   orderCode,
 } from './settings.ts';
-import { simulateSends } from './simulation.ts';
+import { resolveUntil, simulateSends } from './simulation.ts';
 
 export const CHUNK = 200;
 const W_SCORE = 1;
@@ -30,88 +34,149 @@ const W_DRAFT = 20; // an LLM draft takes far longer than a score or a decision
 export { UserError } from './errors.ts';
 import { UserError } from './errors.ts';
 
-/** Orders that a new run would take from the chosen batches (new eligible orders only). */
-async function newEligibleIds(db: Db, batchIds: string[]): Promise<number[]> {
+/** When a campaign on `date` is treated as sent: now for today; 9 PM IST that evening for a past day (a replay). */
+export function campaignMoment(date: string, nowMs = Date.now()): { replay: boolean; atMs: number } {
+  const today = istDate(nowMs);
+  if (date >= today) return { replay: false, atMs: nowMs };
+  return { replay: true, atMs: istDayStart(date) + DEFAULTS.history_campaign_hour * HOUR };
+}
+
+/** Today: new eligible orders not yet in a campaign and still before their dispatch deadline. */
+async function liveCandidates(db: Db, date: string): Promise<number[]> {
   const rows = await db.query(
     `select o.id from orders o, system_settings s
-     where s.id = 1 and o.batch_id = any($1::text[]) and o.eligible and o.lifecycle_state = 'eligible'
+     where s.id = 1 and o.batch_id = $1 and o.eligible and o.lifecycle_state = 'eligible'
        and o.converted_at is null and not o.dispatched and o.dispatch_deadline > s.sim_now
        and not exists (select 1 from run_orders r where r.order_id = o.id)
      order by o.id`,
-    [batchIds],
+    [date],
   );
   return rows.map((r) => Number(r.id));
 }
 
-export async function batchesForRun(db: Db) {
-  return db.query(
-    `select b.id, b.sim_date, b.total_orders, b.cod_orders, b.eligible_orders, b.arrived_at,
-       count(o.id) filter (where o.eligible and o.lifecycle_state = 'eligible' and o.converted_at is null
-         and not o.dispatched and o.dispatch_deadline > s.sim_now) as available,
-       count(o.id) filter (where exists (select 1 from run_orders r where r.order_id = o.id)) as worked_on,
-       count(o.id) filter (where o.send_count > 0) as sent,
-       count(o.id) filter (where o.eligible and o.converted_at is not null and o.send_count = 0) as self_converted,
-       bool_and(o.dispatched) filter (where o.eligible) as closed
-     from order_batches b
-     join system_settings s on s.id = 1
-     left join orders o on o.batch_id = b.id
-     where not b.is_pilot
-     group by b.id, s.sim_now
-     order by b.sim_date desc
-     limit 14`,
+/**
+ * Past day: eligible orders placed before 9 PM that were never in a campaign and had not paid online.
+ * (Orders that switched to prepaid on their own stay converted: a conversion can never be undone.)
+ */
+async function replayCandidates(db: Db, date: string, atMs: number): Promise<number[]> {
+  const rows = await db.query(
+    `select o.id from orders o
+     where o.batch_id = $1 and o.eligible and o.converted_at is null and o.placed_at < $2
+       and not exists (select 1 from run_orders r where r.order_id = o.id)
+     order by o.id`,
+    [date, new Date(atMs).toISOString()],
+  );
+  return rows.map((r) => Number(r.id));
+}
+
+/** Orders a campaign on this date would take right now. */
+export async function campaignCandidates(db: Db, date: string): Promise<{ replay: boolean; atMs: number; ids: number[] }> {
+  const m = campaignMoment(date);
+  const ids = m.replay ? await replayCandidates(db, date, m.atMs) : await liveCandidates(db, date);
+  return { ...m, ids };
+}
+
+/**
+ * Put past-day orders back to how they were at 9 PM that day: not yet shipped, no delivery outcome.
+ * Customer history counters that the outcome had updated are rolled back too.
+ */
+async function rewindOrders(db: Db, ids: number[]) {
+  await db.query(
+    `update customers c set
+       total_orders = greatest(0, c.total_orders - x.n),
+       delivered_orders = greatest(0, c.delivered_orders - x.d),
+       rto_count = greatest(0, c.rto_count - x.r),
+       cod_orders = greatest(0, c.cod_orders - x.n)
+     from (select customer_id, count(*) as n,
+             count(*) filter (where final_outcome = 'delivered') as d,
+             count(*) filter (where final_outcome = 'rto') as r
+           from orders where id = any($1::bigint[]) and final_outcome in ('delivered', 'rto') group by 1) x
+     where c.id = x.customer_id`,
+    [ids],
+  );
+  await db.query(`delete from sim_pending where order_id = any($1::bigint[])`, [ids]);
+  await db.query(
+    `update orders set dispatched = false, final_outcome = null, outcome_at = null, lifecycle_state = 'eligible'
+     where id = any($1::bigint[])`,
+    [ids],
   );
 }
 
-export async function previewRun(db: Db, batchIds: string[]) {
-  const ids = await newEligibleIds(db, batchIds);
-  const ms = await getMerchantSettings(db);
-  const sys = await getSystemSettings(db);
-  return {
-    orders: ids.length,
-    model_version: ms.active_model_version,
-    settings: {
-      discount_amount: Number(ms.discount_amount),
-      max_discount: Number(ms.max_discount),
-      holdout_pct: Number(ms.holdout_pct),
-      exploration_pct: Number(sys?.exploration_pct ?? 0),
-    },
-  };
+export interface CreateRunOptions {
+  date: string;
+  role: string;
+  /** share of orders kept as the no-message control group (0.01–0.5) */
+  holdoutPct?: number;
+  /** share of orders given a random nudge or discount for training (0–0.5) */
+  explorePct?: number;
 }
 
-export async function createRun(db: Db, opts: { batchIds: string[]; role: string }) {
-  if (!opts.batchIds.length) throw new UserError('Choose at least one batch.');
+function checkSplit(holdout: number, explore: number) {
+  if (!Number.isFinite(holdout) || holdout < 0.01 || holdout > 0.5) throw new UserError('Control group must be between 1% and 50%.');
+  if (!Number.isFinite(explore) || explore < 0 || explore > 0.5) throw new UserError('Random test must be between 0% and 50%.');
+  if (holdout + explore > 0.6) throw new UserError('Control + random test can be at most 60%, so the model still decides most orders.');
+}
+
+export async function createRun(db: Db, opts: CreateRunOptions) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(opts.date ?? '')) throw new UserError('Choose a day.');
   return db.tx(async (t) => {
-    const ids = await newEligibleIds(t, opts.batchIds);
-    if (!ids.length) throw new UserError('No new orders are ready for a campaign on this day.');
+    // Same lock as sync(), so new orders and outcomes are not resolved halfway through a replay.
+    await t.query(`select pg_advisory_xact_lock(4242)`);
     const ms = await getMerchantSettings(t);
     const sys = (await getSystemSettings(t))!;
     if (!ms.active_model_version) throw new UserError('No active model.');
-    const snapshot: SettingsSnapshot = { ...ms, exploration_pct: Number(sys.exploration_pct) };
+    const holdout = opts.holdoutPct ?? Number(ms.holdout_pct);
+    const explore = opts.explorePct ?? Number(sys.exploration_pct);
+    checkSplit(holdout, explore);
+    const { replay, atMs, ids } = await campaignCandidates(t, opts.date);
+    if (!ids.length) {
+      throw new UserError(
+        replay ? 'Every order on this day has already been in a campaign.' : 'No new orders are ready for a campaign right now.',
+      );
+    }
+    const at = replay ? new Date(atMs).toISOString() : sys.sim_now;
+    const snapshot: SettingsSnapshot = {
+      ...ms,
+      holdout_pct: holdout,
+      exploration_pct: explore,
+      replay,
+      campaign_at: at,
+      date: opts.date,
+    };
     const [{ next }] = await t.query(`select coalesce(max(id), 0) + 1 as next from runs`);
     const id = Number(next);
     await t.query(
       `insert into runs (id, merchant_id, created_by_role, created_at, source_batch_ids, includes_resends, status,
          order_count, model_version, settings_snapshot)
        values ($1, $2, $3, $4, $5::text[], false, 'queued', $6, $7, $8::jsonb)`,
-      [id, MERCHANT_ID, opts.role, sys.sim_now, opts.batchIds, ids.length, ms.active_model_version, JSON.stringify(snapshot)],
+      [id, MERCHANT_ID, opts.role, at, [opts.date], ids.length, ms.active_model_version, JSON.stringify(snapshot)],
     );
+    if (replay) {
+      await rewindOrders(t, ids);
+      // The hard-rule trigger checks deadlines against engine time, so evaluate it at 9 PM that day.
+      await t.query(`update system_settings set sim_now = $1 where id = 1`, [at]);
+    }
     await t.query(
       `insert into run_orders (run_id, order_id, merchant_id, seq)
        select $1, oid, ${MERCHANT_ID}, ord from unnest($2::bigint[]) with ordinality as t(oid, ord)`,
       [id, ids],
     );
+    if (replay) await t.query(`update system_settings set sim_now = $1 where id = 1`, [sys.sim_now]);
     await t.query(`update orders set lifecycle_state = 'in_run' where id = any($1::bigint[])`, [ids]);
     await audit(t, opts.role, 'authorise_run', `run:${id}`, null, {
-      batches: opts.batchIds,
+      date: opts.date,
+      replay,
       orders: ids.length,
+      control_pct: holdout,
+      random_test_pct: explore,
       model_version: ms.active_model_version,
     });
-    return { id, orders: ids.length, href: campaignHref(opts.batchIds[0], id), name: campaignName(sys.sim_now) };
+    return { id, orders: ids.length, href: campaignHref(id), name: campaignName(at), replay };
   });
 }
 
-export function campaignHref(date: string | undefined, runId: number): string {
-  return `/day/${date ?? 'today'}/campaign/${runId}`;
+export function campaignHref(runId: number): string {
+  return `/campaigns/${runId}`;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -188,7 +253,7 @@ export async function processNext(db: Db, opts: ProcessOptions = {}): Promise<{ 
         db,
         'run_ready',
         `${campaignName(r.created_at)} is ready to review: ${Number(r.order_count).toLocaleString('en-IN')} orders`,
-        campaignHref(r.source_batch_ids?.[0], runId),
+        campaignHref(runId),
       );
     }
     return { run_id: runId, status };
@@ -391,8 +456,17 @@ async function draftChunk(db: Db, run: any, chunk: number, template: boolean): P
 
 // ---------- review, edit, approve & send ----------
 
-/** Messages that would go out on approval right now. */
+/** The moment a run's messages go out: 9 PM that day for a replay, otherwise now. */
+function sendMoment(run: any, sys: { sim_now: string }): string {
+  const snap = run.settings_snapshot as SettingsSnapshot;
+  return snap?.replay && snap.campaign_at ? snap.campaign_at : sys.sim_now;
+}
+
+/** Messages that would go out on approval. */
 async function sendable(db: Db, runId: number) {
+  const [run] = await db.query(`select settings_snapshot from runs where id = $1`, [runId]);
+  const sys = (await getSystemSettings(db))!;
+  const at = sendMoment(run, sys);
   return db.query(
     `select m.id as message_id, m.order_id, m.channel, d.chosen_action, d.discount_applied, o.dispatch_deadline,
        o.features, o.send_count, t.hidden_type, sd.u_conv, sd.u_conv2, sd.u_cancel, sd.u_rto, sd.u_open, sd.u_click,
@@ -402,10 +476,9 @@ async function sendable(db: Db, runId: number) {
      join orders o on o.id = m.order_id
      join customer_truth t on t.customer_id = o.customer_id
      join sim_draws sd on sd.order_id = o.id
-     join system_settings s on s.id = 1
      where m.run_id = $1 and m.review <> 'rejected' and not m.approved
-       and o.converted_at is null and not o.dispatched and o.dispatch_deadline > s.sim_now + interval '5 minutes'`,
-    [runId],
+       and o.converted_at is null and not o.dispatched and o.dispatch_deadline > $2::timestamptz + interval '5 minutes'`,
+    [runId, at],
   );
 }
 
@@ -434,9 +507,10 @@ export async function approvalSummary(db: Db, runId: number) {
   };
 }
 
-export async function approveAndSend(db: Db, runId: number, role: string, opts: { speed?: 'live' | 'history'; quiet?: boolean } = {}) {
+export async function approveAndSend(db: Db, runId: number, role: string, opts: { quiet?: boolean } = {}) {
   if (role !== 'owner') throw new UserError('Only the Owner can approve and send. Use “Request approval” instead.');
   return db.tx(async (t) => {
+    await t.query(`select pg_advisory_xact_lock(4242)`);
     const [run] = await t.query(`select * from runs where id = $1 for update`, [runId]);
     if (!run) throw new UserError('Run not found.');
     if (run.status !== 'ready_for_review') throw new UserError(`This campaign is ${run.status.replace(/_/g, ' ')}, not ready to send.`);
@@ -444,7 +518,8 @@ export async function approveAndSend(db: Db, runId: number, role: string, opts: 
     const rows = await sendable(t, runId);
     const sys = (await getSystemSettings(t))!;
     const snap = run.settings_snapshot as SettingsSnapshot;
-    const sentAt = sys.sim_now;
+    const replay = Boolean(snap?.replay);
+    const sentAt = sendMoment(run, sys);
     let sends: any[] = [];
     if (rows.length) {
       sends = await t.query(
@@ -491,20 +566,24 @@ export async function approveAndSend(db: Db, runId: number, role: string, opts: 
           draws: r as unknown as Draws,
         })),
         Date.parse(sentAt),
-        opts.speed ?? 'live',
+        replay ? 'history' : 'live',
       );
     }
     await t.query(
       `update runs set status = 'sent', approved_at = $2, approved_by_role = $3::user_role where id = $1`,
       [runId, sentAt, role],
     );
+    // A replayed day already happened: play its responses, shipping and deliveries forward to now.
+    if (replay) await resolveUntil(t, Date.now());
     if (!opts.quiet) {
       await audit(t, role, 'approve_and_send', `campaign:${runId}`, null, summary);
       await notify(
         t,
         'run_sent',
-        `${campaignName(run.created_at)} sent: ${rows.length.toLocaleString('en-IN')} messages. Customer responses arrive over the next few minutes.`,
-        campaignHref(run.source_batch_ids?.[0], runId),
+        replay
+          ? `${campaignName(run.created_at)} replayed: ${rows.length.toLocaleString('en-IN')} messages. Responses and deliveries up to now are already in.`
+          : `${campaignName(run.created_at)} sent: ${rows.length.toLocaleString('en-IN')} messages. Customer responses arrive over the next few minutes.`,
+        campaignHref(runId),
       );
     }
     return { sent: sends.length, summary };
@@ -546,7 +625,7 @@ export async function requestApproval(db: Db, runId: number, role: string) {
     db,
     'approval_request',
     `Approval requested by ${role === 'analyst' ? 'an Analyst' : role}: ${campaignName(run.created_at)}`,
-    campaignHref(run.source_batch_ids?.[0], runId),
+    campaignHref(runId),
   );
   await audit(db, role, 'request_approval', `campaign:${runId}`, null, null);
   return { ok: true };

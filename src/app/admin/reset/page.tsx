@@ -1,4 +1,4 @@
-import { DewluneLogo, PoweredByRazorpay } from '@/components/logos';
+import { BrandLogo, PoweredByRazorpay } from '@/components/logos';
 import { SeedRunner } from '@/components/setup';
 
 export const dynamic = 'force-dynamic';
@@ -11,7 +11,7 @@ export default async function ResetPage({ searchParams }: { searchParams: Promis
     <div className="flex min-h-screen items-center justify-center bg-canvas p-6">
       <div className="card w-full max-w-xl space-y-5 px-7 py-6">
         <div className="flex items-center justify-between">
-          <DewluneLogo />
+          <BrandLogo />
           <span className="pill bg-bad-soft text-bad">Admin · outside the app</span>
         </div>
         <div>

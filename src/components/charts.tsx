@@ -60,7 +60,7 @@ export function CompareBars({ data }: { data: { metric: string; ai: number | nul
         <YAxis tick={AXIS} axisLine={false} tickLine={false} tickFormatter={(v) => `${Math.round(Number(v) * 100)}%`} width={44} />
         <Tooltip contentStyle={TIP} formatter={(v: any) => `${(Number(v) * 100).toFixed(1)}%`} />
         <Legend wrapperStyle={{ fontSize: 11 }} iconSize={8} iconType="circle" />
-        <Bar dataKey="ai" name="AI-picked orders" fill={BLUE} radius={[3, 3, 0, 0]} maxBarSize={34} />
+        <Bar dataKey="ai" name="AI-decided orders" fill={BLUE} radius={[3, 3, 0, 0]} maxBarSize={34} />
         <Bar dataKey="control" name="Control group" fill="#C5CEDA" radius={[3, 3, 0, 0]} maxBarSize={34} />
       </ComposedChart>
     </ResponsiveContainer>

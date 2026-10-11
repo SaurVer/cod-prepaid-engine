@@ -1,10 +1,9 @@
 import { LiveProvider } from '@/components/live';
-import { ConceptLabel, DewluneLogo } from '@/components/logos';
+import { ConceptLabel, BrandLogo } from '@/components/logos';
 import { Shell } from '@/components/shell';
 import { getDb } from '@/lib/server/db.ts';
 import { getRole } from '@/lib/server/http.ts';
 import { type AppState, getAppState } from '@/lib/server/state.ts';
-import { sync } from '@/lib/server/sync.ts';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
@@ -15,8 +14,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
   let error: string | null = null;
   try {
     const db = getDb();
-    // Every page load pulls the orders that have arrived since the last visit.
-    await sync(db).catch((e) => console.error('sync failed', e));
     state = await getAppState(db, role);
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
@@ -27,7 +24,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <div className="flex min-h-screen items-center justify-center bg-canvas p-6">
         <div className="card w-full max-w-lg space-y-4 px-7 py-6">
           <div className="flex items-center justify-between">
-            <DewluneLogo />
+            <BrandLogo />
             <ConceptLabel />
           </div>
           <p className="text-[13px] text-ink-soft">

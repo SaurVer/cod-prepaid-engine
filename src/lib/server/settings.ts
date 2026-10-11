@@ -1,5 +1,6 @@
 import type { Economics } from '../core/decide.ts';
 import type { Db } from './db.ts';
+import { UserError } from './errors.ts';
 
 export const MERCHANT_ID = 1;
 export const HOUR = 3600_000;
@@ -43,6 +44,12 @@ export interface Merchant {
 /** Settings snapshot frozen on each run. */
 export interface SettingsSnapshot extends MerchantSettings {
   exploration_pct: number;
+  /** a campaign on a past day, treated as sent at 9 PM that evening */
+  replay?: boolean;
+  /** when the campaign's messages are treated as sent */
+  campaign_at?: string;
+  /** the order day the campaign covers */
+  date?: string;
 }
 
 export async function getMerchant(db: Db): Promise<Merchant | null> {
@@ -77,9 +84,9 @@ export function economicsFor(s: MerchantSettings, channel: string): Economics {
 
 export const DEFAULTS = {
   merchant: {
-    name: 'Dewlune',
-    brand_primary: '#192839',
-    brand_accent: '#F4A38C',
+    name: 'Elvora',
+    brand_primary: '#1F3B33',
+    brand_accent: '#C9A86A',
     tone_guide: 'Warm, calm and plain-spoken. Short sentences. Friendly, never pushy. No emojis.',
   },
   settings: {
@@ -99,7 +106,7 @@ export const DEFAULTS = {
   real_minutes_per_sim_day: 10,
   /** Days of seeded history shown on the dashboard (including today). */
   history_days: 30,
-  /** Hour (IST) when the historical daily campaign ran. */
+  /** Hour (IST) a campaign on a past day is replayed at (as if sent that evening). */
   history_campaign_hour: 21,
 };
 
@@ -172,7 +179,7 @@ export async function notify(db: Db, type: string, message: string, link: string
 }
 
 export function orderCode(id: number | string): string {
-  return `DL-${String(id).padStart(6, '0')}`;
+  return `EV-${String(id).padStart(6, '0')}`;
 }
 
 // ---------- Settings page ----------
@@ -193,6 +200,15 @@ export async function saveSettings(db: Db, role: string, patch: Record<string, u
     vals.push(v);
     sets.push(`${k} = $${vals.length}`);
   }
+  if (patch.holdout_pct !== undefined && patch.holdout_pct !== '') {
+    const h = Number(patch.holdout_pct);
+    if (!(h >= 0.01 && h <= 0.5)) throw new UserError('Control group must be between 1% and 50%.');
+  }
+  if (patch.exploration_pct !== undefined && patch.exploration_pct !== '') {
+    const x = Number(patch.exploration_pct);
+    if (!(x >= 0 && x <= 0.5)) throw new UserError('Random test must be between 0% and 50%.');
+    await db.query(`update system_settings set exploration_pct = $1 where id = 1`, [x]);
+  }
   if (sets.length) await db.query(`update merchant_settings set ${sets.join(', ')}, updated_at = now() where merchant_id = 1`, vals);
   if (typeof patch.tone_guide === 'string' || typeof patch.name === 'string') {
     await db.query(`update merchants set name = coalesce($1, name), tone_guide = coalesce($2, tone_guide) where id = 1`, [
@@ -201,7 +217,8 @@ export async function saveSettings(db: Db, role: string, patch: Record<string, u
     ]);
   }
   const after = await getMerchantSettings(db);
-  await audit(db, role, 'settings_change', 'merchant_settings', before, after);
+  const sys = await getSystemSettings(db);
+  await audit(db, role, 'settings_change', 'merchant_settings', before, { ...after, exploration_pct: sys?.exploration_pct });
   return after;
 }
 

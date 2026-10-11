@@ -5,12 +5,13 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { duration, timeIST, STATUS_LABEL } from '@/lib/format';
 import { api, useLive } from './live';
-import { ConceptLabel, DewluneLogo, PoweredByRazorpay } from './logos';
+import { BrandLogo, ConceptLabel, PayShiftMark, PoweredByRazorpay } from './logos';
 
 export { ConceptLabel } from './logos';
 
 const NAV = [
   { href: '/', label: 'Overview', icon: 'M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 8h6V4h-6z' },
+  { href: '/campaigns', label: 'Campaigns', icon: 'M3 11l15-6v14L3 13zM7 12.5V18a2 2 0 004 0v-4.2M21 9v4' },
   { href: '/orders', label: 'Orders', icon: 'M6 2h9l5 5v15H6zM14 2v6h6M9 13h8M9 17h8' },
   { href: '/model', label: 'Model', icon: 'M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5' },
   { href: '/settings', label: 'Settings', icon: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M14 4v4M8 10v4M16 16v4' },
@@ -92,21 +93,6 @@ function Bell() {
   );
 }
 
-function RefreshControl() {
-  const { state, refreshAll, refreshing } = useLive();
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-[12px] text-ink-faint">Updated {timeIST(state?.last_synced)}</span>
-      <button className="btn btn-sm" onClick={() => refreshAll()} disabled={refreshing} title="Pull new orders and customer responses">
-        <svg viewBox="0 0 24 24" className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth={2}>
-          <path d="M20 12a8 8 0 11-2.3-5.6M20 4v5h-5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-        {refreshing ? 'Refreshing…' : 'Refresh'}
-      </button>
-    </div>
-  );
-}
-
 function CampaignIndicator() {
   const { state } = useLive();
   const runs = state?.active_runs ?? [];
@@ -150,7 +136,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen">
       <aside className="sticky top-0 flex h-screen w-[220px] shrink-0 flex-col bg-rzp-navy px-3 py-5">
         <div className="mb-7 px-2">
-          <DewluneLogo light />
+          <BrandLogo light />
         </div>
         <nav className="flex flex-col gap-1">
           {NAV.map((n) => (
@@ -159,14 +145,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="mt-auto space-y-3 px-2">
           <div className="rounded-lg bg-white/5 px-3 py-2.5 text-[11px] leading-relaxed text-white/55">
-            COD → Prepaid decisions for repeat customers, on your own order data.
+            <b className="font-semibold text-white/80">PayShift</b> picks the most profitable way to move each COD order to prepaid, on your own order data.
           </div>
           <PoweredByRazorpay light />
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-white/95 px-6 backdrop-blur">
-          <RefreshControl />
+          <Link href="/" className="flex items-center gap-2" title="PayShift · COD to prepaid">
+            <PayShiftMark />
+            <span className="text-[14px] font-semibold tracking-[-0.01em] text-ink">PayShift</span>
+            <span className="text-[12px] text-ink-faint">COD → Prepaid</span>
+          </Link>
           <CampaignIndicator />
           <div className="ml-auto flex items-center gap-3">
             <ConceptLabel />

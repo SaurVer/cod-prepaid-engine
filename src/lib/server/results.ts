@@ -2,7 +2,7 @@
 
 import { realisedValue } from '../core/money.ts';
 import type { Db } from './db.ts';
-import { type SettingsSnapshot, getMerchantSettings } from './settings.ts';
+import { type SettingsSnapshot, DEFAULTS, getMerchantSettings, istDate } from './settings.ts';
 
 export interface GroupStats {
   n: number;
@@ -152,15 +152,26 @@ export interface DayCampaign {
   extra_per_order: number | null;
   extra_total: number | null;
   resolved_share: number;
+  /** average profit per resolved order, AI-decided group and control group */
+  ai_profit: number | null;
+  control_profit: number | null;
+  ai_n: number;
+  control_n: number;
+  replay: boolean;
+  holdout_pct: number;
+  explore_pct: number;
 }
 
 export interface DaySummary {
   date: string;
+  /** a past day: a campaign on it replays as if sent at 9 PM that evening */
+  past: boolean;
   planned_total: number;
   total: number;
   cod: number;
   prepaid: number;
   eligible: number;
+  /** orders a new campaign would take right now */
   ready: number;
   messaged: number;
   paid_after_msg: number;
@@ -168,7 +179,7 @@ export interface DaySummary {
 }
 
 /** Per-campaign measured extra profit vs control, computed in SQL from resolved orders. */
-async function campaignStats(db: Db, runIds: number[]): Promise<Map<number, Omit<DayCampaign, 'id' | 'status' | 'created_at' | 'order_count' | 'progress' | 'eta_seconds'>>> {
+async function campaignStats(db: Db, runIds: number[]): Promise<Map<number, Omit<DayCampaign, 'id' | 'status' | 'created_at' | 'order_count' | 'progress' | 'eta_seconds' | 'replay' | 'holdout_pct' | 'explore_pct'>>> {
   const out = new Map();
   if (!runIds.length) return out;
   const groups = await db.query(
@@ -215,32 +226,40 @@ async function campaignStats(db: Db, runIds: number[]): Promise<Map<number, Omit
       extra_per_order: per,
       extra_total: per == null ? null : per * (m?.n ?? 0),
       resolved_share: n ? resolved / n : 0,
+      ai_profit: m?.avg_value == null ? null : Number(m.avg_value),
+      control_profit: h?.avg_value == null ? null : Number(h.avg_value),
+      ai_n: m?.n ?? 0,
+      control_n: h?.n ?? 0,
     });
   }
   return out;
 }
 
 export async function daySummaries(db: Db, limit = 30, only?: string): Promise<DaySummary[]> {
+  const today = istDate(Date.now());
   const days = await db.query(
     `with b as (
-       select * from order_batches where not is_pilot ${only ? 'and id = $2' : ''} order by sim_date desc limit $1
-     )
+       select * from order_batches where not is_pilot ${only ? 'and id = $3' : ''} order by sim_date desc limit $1
+     ),
+     in_run as (select distinct order_id from run_orders where run_id > 0)
      select b.id, b.planned_total, b.total_orders, b.cod_orders, b.eligible_orders,
        count(o.id) filter (where o.payment_mode = 'prepaid')::int as prepaid,
-       count(o.id) filter (where o.eligible and o.lifecycle_state = 'eligible' and o.converted_at is null
-         and not o.dispatched and o.dispatch_deadline > s.sim_now)::int as ready,
+       count(o.id) filter (where o.eligible and o.converted_at is null and r.order_id is null and (
+         case when b.id >= $2 then o.lifecycle_state = 'eligible' and not o.dispatched and o.dispatch_deadline > s.sim_now
+              else o.placed_at < ((b.sim_date + time '${String(DEFAULTS.history_campaign_hour).padStart(2, '0')}:00') at time zone 'Asia/Kolkata') end))::int as ready,
        count(o.id) filter (where o.send_count > 0)::int as messaged,
        count(o.id) filter (where o.converted_via in ('nudge', 'discount'))::int as paid_after_msg
      from b join system_settings s on s.id = 1
      left join orders o on o.batch_id = b.id
+     left join in_run r on r.order_id = o.id
      group by b.id, b.planned_total, b.total_orders, b.cod_orders, b.eligible_orders, b.sim_date
      order by b.sim_date desc`,
-    only ? [limit, only] : [limit],
+    only ? [limit, today, only] : [limit, today],
   );
   const dates = days.map((d) => d.id);
   const runs = dates.length
     ? await db.query(
-        `select id, status, created_at, order_count, progress, eta_seconds, source_batch_ids from runs
+        `select id, status, created_at, order_count, progress, eta_seconds, source_batch_ids, settings_snapshot from runs
          where not is_pilot and source_batch_ids && $1::text[] order by id`,
         [dates],
       )
@@ -248,6 +267,7 @@ export async function daySummaries(db: Db, limit = 30, only?: string): Promise<D
   const stats = await campaignStats(db, runs.map((r) => Number(r.id)));
   return days.map((d) => ({
     date: d.id,
+    past: d.id < today,
     planned_total: Number(d.planned_total),
     total: Number(d.total_orders),
     cod: Number(d.cod_orders),
@@ -265,10 +285,64 @@ export async function daySummaries(db: Db, limit = 30, only?: string): Promise<D
         order_count: Number(r.order_count),
         progress: Number(r.progress),
         eta_seconds: r.eta_seconds,
+        replay: Boolean(r.settings_snapshot?.replay),
+        holdout_pct: Number(r.settings_snapshot?.holdout_pct ?? 0),
+        explore_pct: Number(r.settings_snapshot?.exploration_pct ?? 0),
         ...stats.get(Number(r.id))!,
       })),
   }));
 }
+
+/** Every campaign ever run, newest first, with its measured result. */
+export async function listCampaigns(db: Db) {
+  const runs = await db.query(
+    `select r.id, r.status, r.created_at, r.order_count, r.progress, r.eta_seconds, r.source_batch_ids, r.settings_snapshot,
+       r.model_version, r.created_by_role, r.approved_at, r.started_real_at,
+       count(ro.order_id) filter (where ro.assignment_group = 'holdout')::int as control,
+       count(ro.order_id) filter (where ro.assignment_group = 'explore')::int as random_test,
+       count(ro.order_id) filter (where ro.assignment_group = 'model')::int as ai
+     from runs r left join run_orders ro on ro.run_id = r.id
+     where not r.is_pilot group by r.id order by r.id desc`,
+  );
+  const stats = await campaignStats(db, runs.map((r) => Number(r.id)));
+  return runs.map((r) => ({
+    id: Number(r.id),
+    status: r.status as string,
+    created_at: r.created_at as string,
+    started_real_at: r.started_real_at as string | null,
+    date: (r.source_batch_ids?.[0] ?? '') as string,
+    replay: Boolean(r.settings_snapshot?.replay),
+    order_count: Number(r.order_count),
+    progress: Number(r.progress),
+    model_version: Number(r.model_version),
+    role: r.created_by_role as string,
+    holdout_pct: Number(r.settings_snapshot?.holdout_pct ?? 0),
+    explore_pct: Number(r.settings_snapshot?.exploration_pct ?? 0),
+    control: Number(r.control),
+    random_test: Number(r.random_test),
+    ai: Number(r.ai),
+    ...stats.get(Number(r.id))!,
+  }));
+}
+export type CampaignListRow = Awaited<ReturnType<typeof listCampaigns>>[number];
+
+/** Inputs to work out COD cost at stake for any number of orders (done in the browser). */
+export async function costInputs(db: Db) {
+  const ms = await getMerchantSettings(db);
+  const rates = await rtoRates(db);
+  const [sys] = await db.query(`select exploration_pct from system_settings where id = 1`);
+  return {
+    cod_fee: Number(ms.cod_fee),
+    rto_cost: Number(ms.rto_cost),
+    margin: Number(ms.margin),
+    discount_amount: Number(ms.discount_amount),
+    holdout_pct: Number(ms.holdout_pct),
+    exploration_pct: Number(sys?.exploration_pct ?? 0),
+    cod_rto_rate: rates.cod_rto_rate,
+    prepaid_rto_rate: rates.prepaid_rto_rate,
+  };
+}
+export type CostInputs = Awaited<ReturnType<typeof costInputs>>;
 
 /** COD cost at stake, in plain parts: cash handling + extra returns vs prepaid. */
 export async function codCost(db: Db, eligible: number) {

@@ -9,7 +9,7 @@ const STEPS: { key: string; label: string }[] = [
   { key: 'pilot-2', label: 'Training pilot: part 2' },
   { key: 'pilot-3', label: 'Training pilot: part 3' },
   { key: 'train', label: 'Training model v1' },
-  { key: 'history-1', label: 'Last 30 days: days 1–5, with evening campaigns' },
+  { key: 'history-1', label: 'Last 30 days of orders: days 1–5 (no campaigns, so you can run them)' },
   { key: 'history-2', label: 'Last 30 days: days 6–10' },
   { key: 'history-3', label: 'Last 30 days: days 11–15' },
   { key: 'history-4', label: 'Last 30 days: days 16–20' },

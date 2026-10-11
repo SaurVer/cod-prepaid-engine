@@ -3,33 +3,117 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { duration, num, STATUS_LABEL } from '@/lib/format';
+import { dayLabel, duration, num, STATUS_LABEL } from '@/lib/format';
+import { GroupsExplainer } from './explain';
 import { api, useLive } from './live';
 
-export function RunCampaignButton({ date, ready, label = 'Run campaign' }: { date: string; ready: number; label?: string }) {
+/** Run campaign: opens a dialog to set the control group and random test sizes, then starts the campaign. */
+export function RunCampaignButton({
+  date,
+  ready,
+  past,
+  defaults,
+  label = 'Run campaign',
+}: {
+  date: string;
+  ready: number;
+  past: boolean;
+  defaults: { holdout_pct: number; exploration_pct: number };
+  label?: string;
+}) {
   const { refreshState, toast } = useLive();
   const router = useRouter();
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [control, setControl] = useState(String(Math.round(defaults.holdout_pct * 100)));
+  const [random, setRandom] = useState(String(Math.round(defaults.exploration_pct * 100)));
+  const c = Number(control) / 100;
+  const r = Number(random) / 100;
+  const err =
+    !(c >= 0.01 && c <= 0.5)
+      ? 'Control group must be between 1% and 50%.'
+      : !(r >= 0 && r <= 0.5)
+        ? 'Random test must be between 0% and 50%.'
+        : c + r > 0.6
+          ? 'Control + random test can be at most 60%.'
+          : null;
+  const start = async () => {
+    setBusy(true);
+    try {
+      const res = await api<{ id: number; orders: number; name: string; href: string }>('/api/campaigns', {
+        method: 'POST',
+        json: { date, holdout_pct: c, explore_pct: r },
+      });
+      toast(`${res.name} started on ${num(res.orders)} orders. You can keep working; we'll tell you when it's ready.`, 'info');
+      await refreshState();
+      router.push(res.href);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not start the campaign', 'error');
+      setBusy(false);
+    }
+  };
   return (
-    <button
-      className="btn btn-primary"
-      disabled={busy || ready === 0}
-      onClick={async () => {
-        setBusy(true);
-        try {
-          const r = await api<{ id: number; orders: number; name: string }>('/api/campaigns', { method: 'POST', json: { date } });
-          toast(`${r.name} started on ${num(r.orders)} orders. You can keep working; we'll tell you when it's ready.`, 'info');
-          await refreshState();
-          router.refresh();
-        } catch (e) {
-          toast(e instanceof Error ? e.message : 'Could not start the campaign', 'error');
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      {busy ? 'Starting…' : `${label} on ${num(ready)} orders`}
-    </button>
+    <>
+      <button className="btn btn-primary" disabled={ready === 0} onClick={() => setOpen(true)}>
+        {label} on {num(ready)} orders
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-6" onMouseDown={(e) => e.target === e.currentTarget && !busy && setOpen(false)}>
+          <div className="card w-full max-w-[720px] px-6 py-5 shadow-pop" role="dialog" aria-modal="true" aria-label="Run campaign">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-[17px]">
+                  Run a campaign on {num(ready)} orders from {dayLabel(date)}
+                </h2>
+                <p className="mt-1 text-[12.5px] text-ink-soft">
+                  The AI scores every order, picks an action and drafts the messages. Nothing is sent until you review and approve.
+                </p>
+              </div>
+              <button className="btn btn-sm" onClick={() => setOpen(false)} disabled={busy} aria-label="Close">
+                ✕
+              </button>
+            </div>
+            {past && (
+              <div className="mt-3 rounded-lg border border-warn/25 bg-warn-soft px-3.5 py-2.5 text-[12.5px] text-warn">
+                <b>This day has passed, so the campaign is a replay.</b> It runs as if the messages went out at 9 PM on {dayLabel(date)}. When you send it,
+                customer responses, shipping and deliveries up to today are filled in straight away, so you see the result immediately.
+              </div>
+            )}
+            <div className="mt-4 grid grid-cols-2 gap-4">
+              <label className="block">
+                <span className="label">Control group</span>
+                <div className="mt-1 flex items-center gap-2">
+                  <input className="input w-24 text-right" type="number" min={1} max={50} value={control} onChange={(e) => setControl(e.target.value)} />
+                  <span className="text-ink-soft">% of orders · about {num(Math.round(ready * (c || 0)))}</span>
+                </div>
+              </label>
+              <label className="block">
+                <span className="label">Random test</span>
+                <div className="mt-1 flex items-center gap-2">
+                  <input className="input w-24 text-right" type="number" min={0} max={50} value={random} onChange={(e) => setRandom(e.target.value)} />
+                  <span className="text-ink-soft">% of orders · about {num(Math.round(ready * (r || 0)))}</span>
+                </div>
+              </label>
+            </div>
+            <div className="mt-4">
+              <GroupsExplainer holdoutPct={c || 0} explorePct={r || 0} compact />
+            </div>
+            {err && <div className="mt-3 rounded-lg border border-bad/30 bg-bad-soft px-3 py-2 text-[12.5px] text-bad">{err}</div>}
+            <div className="mt-5 flex items-center justify-between">
+              <span className="text-[12px] text-ink-faint">Defaults come from Settings. These sizes apply to this campaign only.</span>
+              <div className="flex gap-2">
+                <button className="btn" onClick={() => setOpen(false)} disabled={busy}>
+                  Cancel
+                </button>
+                <button className="btn btn-primary" onClick={start} disabled={busy || Boolean(err)}>
+                  {busy ? 'Starting…' : 'Start campaign'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

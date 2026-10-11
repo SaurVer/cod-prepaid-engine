@@ -68,7 +68,7 @@ export const simDate = dayLabel;
 export const simTime = dateTimeIST;
 
 export function orderCode(id: number | string): string {
-  return `DL-${String(id).padStart(6, '0')}`;
+  return `EV-${String(id).padStart(6, '0')}`;
 }
 
 export function campaignName(createdAt: string): string {
@@ -88,7 +88,7 @@ export const ACTION_LONG: Record<string, string> = {
   nudge: 'Reminder (no discount)',
   discount: '₹50 off offer',
 };
-export const GROUP_LABEL: Record<string, string> = { model: 'AI-picked', holdout: 'Control group', explore: 'Random test' };
+export const GROUP_LABEL: Record<string, string> = { model: 'AI-decided', holdout: 'Control group', explore: 'Random test' };
 export const REASON_LABEL: Record<string, string> = {
   best_gain: 'Highest expected extra profit',
   no_positive_gain: 'No message earns more than doing nothing',

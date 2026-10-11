@@ -52,7 +52,7 @@ export async function getAppState(db: Db, role: string): Promise<AppState> {
     active_runs: runs.map((r) => ({
       id: Number(r.id),
       name: campaignName(r.created_at),
-      href: campaignHref(r.source_batch_ids?.[0], Number(r.id)),
+      href: campaignHref(Number(r.id)),
       status: r.status,
       progress: Number(r.progress),
       eta_seconds: r.eta_seconds,

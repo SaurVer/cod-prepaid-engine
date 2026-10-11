@@ -57,7 +57,7 @@ function Lookup({ run, order }: { run?: string; order?: string }) {
 export default async function InspectorPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
   const runId = Number(sp.run);
-  const orderId = Number(String(sp.order ?? '').replace(/^(DL|VD)-0*/i, ''));
+  const orderId = Number(String(sp.order ?? '').replace(/^(DL|VD|EV)-0*/i, ''));
   const db = getDb();
 
   if (!runId) {
@@ -81,7 +81,7 @@ export default async function InspectorPage({ searchParams }: { searchParams: Pr
       <div className="space-y-4">
         <Lookup run={String(runId)} />
         <Section title={`Campaign ${runId}`} sub="Pick an order to see its decision step by step.">
-          <div className="text-[12px] text-ink-soft">AI-picked orders where the reminder and the offer were closest:</div>
+          <div className="text-[12px] text-ink-soft">AI-decided orders where the reminder and the offer were closest:</div>
           <div className="mt-2 flex flex-wrap gap-2">
             {examples.map((e) => (
               <Link key={e.order_id} href={`/inspector?run=${runId}&order=${e.order_id}`} className="btn btn-sm font-mono">
@@ -312,7 +312,7 @@ export default async function InspectorPage({ searchParams }: { searchParams: Pr
                 {row.assignment_group === 'explore' && ` (arm draw ${Number(det.draws.uExplore).toFixed(3)})`}
               </li>
               <li>
-                AI-picked orders take the action with the highest extra profit above ₹0: reminder {inr(gains.nudge, 2)}, offer {inr(gains.discount, 2)}
+                AI-decided orders take the action with the highest extra profit above ₹0: reminder {inr(gains.nudge, 2)}, offer {inr(gains.discount, 2)}
               </li>
               <li>
                 Offer {det.discount_available ? 'allowed' : 'removed by the max-discount cap'} ({inr(det.econ.discountAmount)} vs max {inr(det.econ.maxDiscount)}) → reason:{' '}

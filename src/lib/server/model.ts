@@ -218,3 +218,117 @@ export async function promoteModel(db: Db, version: number, role: string) {
     return { ok: true };
   });
 }
+
+// ---------- Model page: training data, parameters, per-run outputs ----------
+
+/** What the model can learn from: randomised orders (pilot, control group, random test), by source and action. */
+export async function trainingDataSummary(db: Db) {
+  const rows = await db.query(
+    `select case when ro.run_id = 0 then 'pilot' when ro.assignment_group = 'holdout' then 'control' else 'random_test' end as source,
+       d.chosen_action as action,
+       count(*)::int as n,
+       count(*) filter (where o.final_outcome is not null)::int as resolved,
+       count(*) filter (where o.final_outcome is not null and o.converted_at is not null)::int as paid_online,
+       count(*) filter (where o.final_outcome = 'cancelled')::int as cancelled,
+       count(*) filter (where o.final_outcome = 'rto')::int as rto,
+       count(*) filter (where o.final_outcome in ('delivered', 'rto'))::int as shipped,
+       count(*) filter (where o.final_outcome is not null and o.used_in_training_version is null)::int as unused
+     from run_orders ro
+     join decisions d on d.run_id = ro.run_id and d.order_id = ro.order_id
+     join orders o on o.id = ro.order_id
+     where ro.assignment_group in ('holdout', 'explore')
+     group by 1, 2 order by 1, 2`,
+  );
+  return rows.map((r) => ({
+    source: r.source as 'pilot' | 'control' | 'random_test',
+    action: r.action as Action,
+    n: Number(r.n),
+    resolved: Number(r.resolved),
+    paid_online: Number(r.paid_online),
+    cancelled: Number(r.cancelled),
+    rto: Number(r.rto),
+    shipped: Number(r.shipped),
+    unused: Number(r.unused),
+  }));
+}
+
+/** A few recent training rows exactly as the model sees them: inputs, the action, and the outcome labels. */
+export async function trainingSample(db: Db, limit = 12) {
+  return db.query(
+    `select o.id, o.placed_at, o.features, d.chosen_action, ro.run_id, ro.assignment_group,
+       o.converted_at is not null as paid_online, o.converted_via, o.final_outcome, o.used_in_training_version
+     from run_orders ro
+     join decisions d on d.run_id = ro.run_id and d.order_id = ro.order_id
+     join orders o on o.id = ro.order_id
+     where ro.assignment_group in ('holdout', 'explore') and o.final_outcome is not null
+     order by o.placed_at desc, o.id desc limit $1`,
+    [limit],
+  );
+}
+
+/** Per-order model outputs for one campaign: the predictions, expected profit per action and the decision. */
+export async function runModelOutputs(
+  db: Db,
+  runId: number,
+  opts: { page?: number; group?: string; action?: string; pageSize?: number } = {},
+) {
+  const [run] = await db.query(`select * from runs where id = $1 and not is_pilot`, [runId]);
+  if (!run) return null;
+  const pageSize = opts.pageSize ?? 50;
+  const page = Math.max(1, opts.page ?? 1);
+  const where = ['ro.run_id = $1'];
+  const params: unknown[] = [runId];
+  if (opts.group && ['model', 'holdout', 'explore'].includes(opts.group)) {
+    params.push(opts.group);
+    where.push(`ro.assignment_group = $${params.length}::assignment_group`);
+  }
+  if (opts.action && ['none', 'nudge', 'discount'].includes(opts.action)) {
+    params.push(opts.action);
+    where.push(`d.chosen_action = $${params.length}::action_type`);
+  }
+  const base = `from run_orders ro
+     join predictions p on p.run_id = ro.run_id and p.order_id = ro.order_id
+     join decisions d on d.run_id = ro.run_id and d.order_id = ro.order_id
+     join orders o on o.id = ro.order_id
+     where ${where.join(' and ')}`;
+  const [{ total }] = await db.query(`select count(*)::int as total ${base}`, params);
+  const rows = await db.query(
+    `select ro.order_id, ro.assignment_group, o.value, o.features,
+       p.p_convert_none, p.p_convert_nudge, p.p_convert_discount, p.p_cancel_none, p.p_cancel_nudge, p.p_cancel_discount,
+       p.r_cod_none, p.r_pre_none, p.r_pre_discount,
+       d.ev_none, d.ev_nudge, d.ev_discount, d.gain_nudge, d.gain_discount, d.chosen_action, d.reason_code,
+       o.converted_at is not null as paid_online, o.converted_via, o.final_outcome
+     ${base}
+     order by greatest(d.gain_nudge, d.gain_discount) desc, ro.order_id
+     limit ${pageSize} offset ${(page - 1) * pageSize}`,
+    params,
+  );
+  const [agg] = await db.query(
+    `select count(*)::int as n,
+       avg(p.p_convert_none) as p_none, avg(p.p_convert_nudge) as p_nudge, avg(p.p_convert_discount) as p_discount,
+       avg(p.p_cancel_none) as k_none, avg(p.p_cancel_nudge) as k_nudge, avg(p.p_cancel_discount) as k_discount,
+       avg(p.r_cod_none) as rc, avg(p.r_pre_none) as rp_nudge, avg(p.r_pre_discount) as rp_discount,
+       avg(d.ev_none) as ev_none, avg(d.ev_nudge) as ev_nudge, avg(d.ev_discount) as ev_discount,
+       sum(case when ro.assignment_group = 'model' and d.chosen_action = 'nudge' then d.gain_nudge
+                when ro.assignment_group = 'model' and d.chosen_action = 'discount' then d.gain_discount else 0 end) as expected_gain,
+       count(*) filter (where ro.assignment_group = 'model' and d.chosen_action = 'none')::int as ai_none,
+       count(*) filter (where ro.assignment_group = 'model' and d.chosen_action = 'nudge')::int as ai_nudge,
+       count(*) filter (where ro.assignment_group = 'model' and d.chosen_action = 'discount')::int as ai_discount,
+       count(*) filter (where ro.assignment_group = 'holdout')::int as control,
+       count(*) filter (where ro.assignment_group = 'explore')::int as random_test
+     from run_orders ro
+     join predictions p on p.run_id = ro.run_id and p.order_id = ro.order_id
+     join decisions d on d.run_id = ro.run_id and d.order_id = ro.order_id
+     where ro.run_id = $1`,
+    [runId],
+  );
+  const num = (x: unknown) => (x == null ? null : Number(x));
+  return {
+    run,
+    total: Number(total),
+    page,
+    pageSize,
+    rows,
+    agg: Object.fromEntries(Object.entries(agg).map(([k, v]) => [k, num(v)])) as Record<string, number | null>,
+  };
+}

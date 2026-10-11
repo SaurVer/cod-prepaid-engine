@@ -14,20 +14,48 @@ const lap = (label: string) => console.log(`${((Date.now() - t0) / 1000).toFixed
 
 for (const step of SEED_STEPS) lap(`seed ${step}: ${await runSeedStep(db, step)}`);
 
-const days = await daySummaries(db, 30);
+let days = await daySummaries(db, 30);
 lap(`days: ${days.length}; today ${JSON.stringify({ ...days[0], campaigns: days[0].campaigns.length })}`);
-const y = days[1];
-lap(`yesterday ${y.date}: orders ${y.total}, eligible ${y.eligible}, campaigns ${JSON.stringify(y.campaigns.map((c) => ({ status: c.status, sent: c.sent, paid: c.paid_online, extra: c.extra_per_order, resolved: c.resolved_share })))}`);
+assert.equal(days.filter((d) => d.campaigns.length).length, 0, 'seeded history has no campaigns');
 const old = days[10];
-lap(`${old.date}: ${JSON.stringify(old.campaigns.map((c) => ({ sent: c.sent, paid: c.paid_online, extra: c.extra_per_order?.toFixed(2), total: c.extra_total?.toFixed(0), exp: c.expected_gain.toFixed(0) })))}`);
-lap(`cod cost today ${JSON.stringify(await codCost(db, days[0].eligible))}`);
+lap(`${old.date}: orders ${old.total}, eligible ${old.eligible}, replayable ${old.ready}`);
+assert.ok(old.ready > 0.6 * old.eligible, 'most eligible orders on a past day can be replayed');
 
 // live sync adds orders over time
 const s1 = await sync(db, Date.now() + 30 * 60_000);
 lap(`sync +30min added ${s1.added}`);
 
+// ---- replay a past day ----
+const [{ n: custBefore }] = await db.query(`select sum(total_orders)::int as n from customers`);
+const rp = await createRun(db, { date: old.date, role: 'owner', holdoutPct: 0.2, explorePct: 0 });
+lap(`replay ${rp.name} with ${rp.orders} orders (replay=${rp.replay}) → ${rp.href}`);
+assert.equal(rp.orders, old.ready);
+// a sync while the campaign is being prepared must not ship the reopened orders
+await sync(db, Date.now() + 31 * 60_000);
+const [{ shipped }] = await db.query(`select count(*)::int as shipped from run_orders ro join orders o on o.id = ro.order_id where ro.run_id = $1 and o.dispatched`, [rp.id]);
+assert.equal(shipped, 0, 'replayed orders wait for the campaign');
+for (let i = 0; i < 100; i++) {
+  const r = await processNext(db, { template: true });
+  if (r.status === 'ready_for_review') break;
+}
+const [{ g }] = await db.query(`select json_object_agg(assignment_group, n) as g from (select assignment_group, count(*) n from run_orders where run_id = $1 group by 1) x`, [rp.id]);
+lap(`groups ${JSON.stringify(g)}`);
+assert.ok(!g.explore, 'random test 0% → no random-test orders');
+lap(`summary ${JSON.stringify(await approvalSummary(db, rp.id))}`);
+const rs = await approveAndSend(db, rp.id, 'owner');
+lap(`replay sent ${rs.sent}`);
+const rr = await runResults(db, rp.id);
+lap(`replay funnel ${JSON.stringify(rr!.funnel)} resolved ${rr!.resolved_share.toFixed(2)} extra/order ${rr!.incremental_per_order?.toFixed(2)} total ${rr!.realised_gain?.toFixed(0)}`);
+assert.ok(rr!.funnel.converted > 0, 'replay conversions are in immediately');
+assert.equal(rr!.resolved_share, 1, 'a 10-day-old replay is fully measured');
+const [{ n: custAfter }] = await db.query(`select sum(total_orders)::int as n from customers`);
+lap(`customer total_orders before ${custBefore} after ${custAfter}`);
+days = await daySummaries(db, 30);
+assert.equal(days[10].ready, 0, 'replayed day has nothing left to run');
+await assert.rejects(createRun(db, { date: old.date, role: 'owner' }), /already been in a campaign/);
+
 const today = days[0].date;
-const run = await createRun(db, { batchIds: [today], role: 'owner' });
+const run = await createRun(db, { date: today, role: 'owner' });
 lap(`campaign ${run.name} with ${run.orders} orders → ${run.href}`);
 for (let i = 0; i < 100; i++) {
   const r = await processNext(db, { template: true });

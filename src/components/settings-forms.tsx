@@ -18,7 +18,7 @@ export function SettingsForm({ title, fields, values }: { title: string; fields:
   const router = useRouter();
   const owner = state?.role === 'owner';
   const [form, setForm] = useState<Record<string, string>>(
-    Object.fromEntries(fields.map((f) => [f.key, String(Number(values[f.key]) * (f.scale ?? 1))])),
+    Object.fromEntries(fields.map((f) => [f.key, String(Math.round(Number(values[f.key]) * (f.scale ?? 1) * 100) / 100)])),
   );
   const [busy, setBusy] = useState(false);
   return (

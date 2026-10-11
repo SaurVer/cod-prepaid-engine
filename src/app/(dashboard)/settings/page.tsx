@@ -2,7 +2,8 @@ import { IntegrationToggle, ProfileForm, SettingsForm } from '@/components/setti
 import { Badge, PageHeader } from '@/components/ui';
 import { dateTimeIST } from '@/lib/format';
 import { getDb } from '@/lib/server/db.ts';
-import { getMerchant, getMerchantSettings } from '@/lib/server/settings.ts';
+import { getMerchant, getMerchantSettings, getSystemSettings } from '@/lib/server/settings.ts';
+import { GroupsExplainer } from '@/components/explain';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +23,7 @@ const ACTION_TEXT: Record<string, string> = {
 export default async function SettingsPage() {
   const db = getDb();
   const merchant = (await getMerchant(db))!;
-  const s = await getMerchantSettings(db);
+  const s = { ...(await getMerchantSettings(db)), exploration_pct: Number((await getSystemSettings(db))?.exploration_pct ?? 0) };
   const integrations = await db.query(`select * from integrations order by id`);
   const log = await db.query(`select * from audit_log order by id desc limit 40`);
   return (
@@ -69,11 +70,17 @@ export default async function SettingsPage() {
           title="Experiment"
           values={s as any}
           fields={[
-            { key: 'holdout_pct', label: 'Control group size', hint: 'Share of orders kept as a no-message control', suffix: '%', scale: 100 },
+            { key: 'holdout_pct', label: 'Control group (default)', hint: 'Random share sent nothing: the baseline for measuring profit, 1–50%', suffix: '%', scale: 100 },
+            { key: 'exploration_pct', label: 'Random test (default)', hint: 'Random share sent a random reminder or offer, for training. 0–50%; 0 skips it', suffix: '%', scale: 100 },
             { key: 'max_sends', label: 'Max messages per order', hint: 'Including resends' },
             { key: 'min_gap_hours', label: 'Minimum gap between messages', hint: 'Before a resend is allowed', suffix: 'hours' },
           ]}
         />
+      </div>
+      <div className="card px-5 py-4">
+        <h2 className="mb-1">Control group and random test</h2>
+        <p className="mb-3 text-[12px] text-ink-faint">Defaults for new campaigns. You can change both when you start a campaign.</p>
+        <GroupsExplainer holdoutPct={Number(s.holdout_pct)} explorePct={Number(s.exploration_pct)} />
       </div>
       <div className="card overflow-auto">
         <div className="border-b border-line px-4 py-3">

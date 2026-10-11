@@ -61,3 +61,13 @@ export async function sync(db: Db, nowMs = Date.now()): Promise<SyncResult> {
     return out;
   });
 }
+
+/** Sync only if the last one is older than `maxAgeMs` (keeps page loads fast). */
+export async function syncIfStale(db: Db, maxAgeMs = 30_000): Promise<SyncResult | null> {
+  const [s] = await db.query(`select last_real_tick from system_settings where id = 1`);
+  if (s?.last_real_tick && Date.now() - Date.parse(s.last_real_tick) < maxAgeMs) return null;
+  return sync(db).catch((e) => {
+    console.error('sync failed', e);
+    return null;
+  });
+}

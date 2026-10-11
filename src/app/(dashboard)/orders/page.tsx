@@ -100,6 +100,8 @@ async function ByDay() {
 async function ByOrder({ sp, dates, qs }: { sp: Record<string, string | undefined>; dates: string[]; qs: (p: Record<string, string | undefined>) => string }) {
   const res = await listOrders(getDb(), {
     date: sp.date,
+    from: sp.from,
+    to: sp.to,
     view: sp.view,
     group: sp.group,
     status: sp.status,
@@ -123,11 +125,13 @@ async function ByOrder({ sp, dates, qs }: { sp: Record<string, string | undefine
       <AutoForm className="card flex flex-wrap items-end gap-4 px-4 py-3">
         {sp.back && <input type="hidden" name="back" value={sp.back} />}
         <input type="hidden" name="page" value={sp.page ?? '1'} />
-        {sel('date', 'Day', [['', 'All days'], ...dates.map((d) => [d, `${weekday(d)} ${dayLabel(d)}`] as [string, string])])}
+        {!sp.date && sp.from && <input type="hidden" name="from" value={sp.from} />}
+        {!sp.date && sp.to && <input type="hidden" name="to" value={sp.to} />}
+        {sel('date', 'Day', [['', !sp.date && sp.from ? `${dayLabel(sp.from)} – ${dayLabel(sp.to ?? dates[0])}` : 'All days'], ...dates.map((d) => [d, `${weekday(d)} ${dayLabel(d)}`] as [string, string])])}
         {sel('view', 'Show', VIEWS)}
         {sel('group', 'Campaign group', [
           ['', 'Any'],
-          ['model', 'AI-picked'],
+          ['model', 'AI-decided'],
           ['holdout', 'Control group'],
           ['explore', 'Random test'],
           ['none', 'Not in a campaign'],

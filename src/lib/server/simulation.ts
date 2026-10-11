@@ -377,7 +377,12 @@ export async function resolveUntil(db: Db, untilMs: number): Promise<{ events: n
      join customer_truth t on t.customer_id = c.id
      join sim_draws d on d.order_id = o.id
      left join lateral (select s.action, s.attempt from sends s where s.order_id = o.id order by s.sent_at desc, s.id desc limit 1) ls on true
-     where o.eligible and not o.dispatched and o.dispatch_deadline <= $1`,
+     where o.eligible and not o.dispatched and o.dispatch_deadline <= $1
+       -- a replayed past day waits for its campaign to be sent (or discarded) before it ships
+       and not exists (
+         select 1 from run_orders ro join runs r on r.id = ro.run_id
+         where ro.order_id = o.id and r.settings_snapshot->>'replay' = 'true'
+           and r.status in ('queued', 'scoring', 'deciding', 'drafting', 'ready_for_review'))`,
     [until],
   );
   const cancelIds: number[] = [];

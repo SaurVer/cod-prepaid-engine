@@ -1,11 +1,10 @@
-// Chunked seed: reset → customers → 30-day randomised pilot (3 chunks) → model v1 → today's batch.
+// Chunked seed: reset → customers → 30-day randomised pilot (3 chunks) → model v1 → 29 past days of orders → today so far.
 
 import { pilotOrder } from '../core/pilot.ts';
 import { type Rng, defaultRng, randInt } from '../core/rng.ts';
 import { type HiddenType, PILOT_TYPE_SHARES, TYPE_SHARES, generateRepeatCustomer, pickType } from '../core/sim.ts';
 import type { Db } from './db.ts';
 import { trainAndStore } from './model.ts';
-import { approveAndSend, createRun, processNext } from './pipeline.ts';
 import { DAY, DEFAULTS, HOUR, MERCHANT_ID, addDays, istDate, istDayStart, messageCost } from './settings.ts';
 import { type NewOrder, customerStateFromRow, insertCustomers, insertOrders, resolveUntil } from './simulation.ts';
 import { fillDay } from './sync.ts';
@@ -23,7 +22,7 @@ export const SEED_STEP_LABELS: Record<SeedStep, string> = {
   'pilot-2': 'Training pilot: part 2',
   'pilot-3': 'Training pilot: part 3',
   train: 'Training model v1 on the pilot',
-  'history-1': 'Last 30 days: days 1–5 with campaigns',
+  'history-1': 'Last 30 days of orders: days 1–5 (no campaigns)',
   'history-2': 'Last 30 days: days 6–10',
   'history-3': 'Last 30 days: days 11–15',
   'history-4': 'Last 30 days: days 16–20',
@@ -49,20 +48,11 @@ async function setEngineTime(db: Db, ms: number) {
   await db.query(`update system_settings set sim_now = $1 where id = 1`, [iso(ms)]);
 }
 
-/** One seeded history day: orders until 9 PM, an evening campaign (templates, no LLM), the rest of the day. */
+/** One seeded history day: the whole day's orders and everything that happened to them. No campaign:
+ * past days are left for you to run a campaign on (it replays as if sent at 9 PM that evening). */
 async function seedHistoryDay(db: Db, date: string) {
   const start = istDayStart(date);
-  const campaignAt = start + DEFAULTS.history_campaign_hour * HOUR;
   await setEngineTime(db, start);
-  await fillDay(db, date, campaignAt);
-  await resolveUntil(db, campaignAt);
-  await setEngineTime(db, campaignAt);
-  const run = await createRun(db, { batchIds: [date], role: 'owner' });
-  for (let i = 0; i < 50; i++) {
-    const r = await processNext(db, { chunk: 1500, template: true, quiet: true });
-    if (r.status === 'ready_for_review' || r.status === 'idle') break;
-  }
-  await approveAndSend(db, run.id, 'owner', { speed: 'history', quiet: true });
   await fillDay(db, date, start + DAY);
   await resolveUntil(db, start + DAY);
   await setEngineTime(db, start + DAY);
@@ -242,7 +232,7 @@ export async function runSeedStep(db: Db, step: SeedStep, rng: Rng = defaultRng)
       const days: string[] = [];
       for (let i = part * 5; i < Math.min(part * 5 + 5, DEFAULTS.history_days - 1); i++) days.push(addDays(historyStart, i));
       for (const d of days) await seedHistoryDay(db, d);
-      return `${days.length} days with campaigns (${days[0]} to ${days[days.length - 1]})`;
+      return `${days.length} days of orders (${days[0]} to ${days[days.length - 1]})`;
     }
 
     case 'today': {

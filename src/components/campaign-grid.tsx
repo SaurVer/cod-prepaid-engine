@@ -178,7 +178,7 @@ export function CampaignGrid({ runId, editable, rows: initialRows, initialAction
       <div className="flex flex-wrap items-center gap-4 border-b border-line px-4 py-3">
         <h2>Orders in this campaign</h2>
         {sel(action, setAction, [['none', 'No message'], ['nudge', 'Reminder'], ['discount', '₹50 off offer']], 'Decision')}
-        {sel(group, setGroup, [['model', 'AI-picked'], ['holdout', 'Control group'], ['explore', 'Random test']], 'Group')}
+        {sel(group, setGroup, [['model', 'AI-decided'], ['holdout', 'Control group'], ['explore', 'Random test']], 'Group')}
         {sel(status, setStatus, statuses.map((s) => [s, s] as [string, string]), 'What happened')}
         <span className="ml-auto text-[12px] text-ink-faint">
           {num(filtered.length)} of {num(rows.length)} orders
@@ -239,7 +239,7 @@ interface Summary {
 }
 
 /** One button: Approve & send → pop-up summary → Confirm. Analysts can request approval instead. */
-export function ApproveSend({ runId, name }: { runId: number; name: string }) {
+export function ApproveSend({ runId, name, replayOf }: { runId: number; name: string; replayOf?: string }) {
   const { state, toast, refreshState } = useLive();
   const router = useRouter();
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -294,12 +294,17 @@ export function ApproveSend({ runId, name }: { runId: number; name: string }) {
             <p className="mt-1 text-[13px] text-ink-soft">
               Messages go to each customer on their preferred channel with a one-tap pay-online link. Sending is simulated in this prototype.
             </p>
+            {replayOf && (
+              <p className="mt-2 rounded-lg bg-warn-soft px-3 py-2 text-[12px] text-warn">
+                Replay: the messages count as sent at 9 PM on {replayOf}. Responses, shipping and deliveries up to today are filled in as soon as you confirm.
+              </p>
+            )}
             <div className="mt-4 grid grid-cols-2 gap-3">
               {[
                 ['Orders to message', num(summary.to_message), `${num(summary.nudges)} reminders · ${num(summary.discounts)} ₹50 off offers`],
                 ['Discount exposure', inr(summary.discount_exposure), 'only if every offer is taken'],
                 ['Channels', `${num(summary.whatsapp)} / ${num(summary.mobile_inbox)}`, 'WhatsApp / mobile inbox'],
-                ['Control group', num(summary.holdout), 'get no message, so we can measure the lift'],
+                ['Control group', num(summary.holdout), 'get no message: the baseline for measuring profit'],
               ].map(([l, v, s]) => (
                 <div key={l} className="rounded-xl border border-line px-4 py-3">
                   <div className="label">{l}</div>
@@ -324,7 +329,12 @@ export function ApproveSend({ runId, name }: { runId: number; name: string }) {
                   setBusy(true);
                   try {
                     const r = await api<{ sent: number }>(`/api/runs/${runId}/approve`, { method: 'POST' });
-                    toast(`Sent ${num(r.sent)} messages. Customer responses will appear here over the next few minutes.`, 'success');
+                    toast(
+                      replayOf
+                        ? `Replayed ${num(r.sent)} messages. Responses and deliveries up to today are in.`
+                        : `Sent ${num(r.sent)} messages. Customer responses will appear here over the next few minutes.`,
+                      'success',
+                    );
                     setSummary(null);
                     await refreshState();
                     router.refresh();
@@ -335,7 +345,7 @@ export function ApproveSend({ runId, name }: { runId: number; name: string }) {
                   }
                 }}
               >
-                {busy ? 'Sending…' : `Confirm and send ${num(summary.to_message)} messages`}
+                {busy ? (replayOf ? 'Sending and playing forward…' : 'Sending…') : `Confirm and send ${num(summary.to_message)} messages`}
               </button>
             </div>
           </div>

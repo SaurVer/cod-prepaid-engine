@@ -1,6 +1,6 @@
 import type { Db } from './db.ts';
 
-/** What the AI decided for the AI-picked orders, plus control/test counts and sample messages. */
+/** What the AI decided for the AI-decided orders, plus control/test counts and sample messages. */
 export async function campaignDecisions(db: Db, runId: number) {
   const cards = await db.query(
     `select d.chosen_action as action, count(*)::int as n,
