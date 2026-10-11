@@ -140,13 +140,13 @@ export function ExtraProfitExplainer({
         </div>
         <div className="mt-1.5 grid grid-cols-[1fr_auto] gap-x-6 gap-y-1 text-[13px]">
           <span>Orders that got the AI&apos;s message earned, on average</span>
-          <b className="text-right tabular-nums">{inr(ex.ai)} each</b>
+          <b className="text-right tabular-nums">{inr(ex.ai, 2)} each</b>
           <span>Orders that got nothing (control group) earned</span>
-          <b className="text-right tabular-nums">{inr(ex.control)} each</b>
+          <b className="text-right tabular-nums">{inr(ex.control, 2)} each</b>
           <span>So each message added</span>
-          <b className={`text-right tabular-nums ${gap >= 0 ? 'text-ok' : 'text-bad'}`}>{inr(gap)} per order</b>
+          <b className={`text-right tabular-nums ${gap >= 0 ? 'text-ok' : 'text-bad'}`}>{inr(gap, 2)} per order</b>
           <span>
-            Across the {num(ex.n)} orders that got the AI&apos;s choice: {num(ex.n)} × {inr(gap)}
+            Across the {num(ex.n)} orders that got the AI&apos;s choice: {num(ex.n)} × {inr(gap, 2)}
           </span>
           <b className={`text-right tabular-nums ${ex.total >= 0 ? 'text-ok' : 'text-bad'}`}>= {inr(ex.total)} extra profit</b>
         </div>
