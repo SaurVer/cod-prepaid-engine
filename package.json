@@ -1,0 +1,35 @@
+{
+  "name": "cod-prepaid-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "COD-to-Prepaid Decision Engine — concept prototype on synthetic data",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "node --experimental-strip-types --no-warnings --test tests/*.test.ts",
+    "db:migrate": "node scripts/migrate.mjs",
+    "test:integration": "node --experimental-strip-types --no-warnings scripts/integration.ts"
+  },
+  "engines": {
+    "node": ">=22.6"
+  },
+  "dependencies": {
+    "@tanstack/react-table": "^8.21.0",
+    "next": "^15.3.0",
+    "pg": "^8.13.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "recharts": "^2.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.0"
+  }
+}
