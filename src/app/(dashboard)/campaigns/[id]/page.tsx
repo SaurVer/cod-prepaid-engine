@@ -126,6 +126,12 @@ export default async function CampaignPage({
                   { metric: 'Returned (RTO)', ai: m.rto_rate, control: h.rto_rate },
                 ]}
               />
+              {replay && (
+                <p className="pb-2 text-[11.5px] text-ink-faint">
+                  Replay: orders that later paid online on their own were left out (a payment can&apos;t be undone), so the control group shows almost no online
+                  payments. The comparison is still fair: both groups were picked at random from the same orders.
+                </p>
+              )}
             </div>
             <div className="card col-span-5 px-5 py-4 text-[13px]">
               <h2 className="mb-2">How the extra profit is measured</h2>
