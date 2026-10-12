@@ -10,6 +10,7 @@ import type { CostInputs, DayCampaign, DaySummary } from '@/lib/server/results.t
 import { CampaignProgress, RunCampaignButton } from './campaign-actions';
 import { DailyChart } from './charts';
 import { ExtraProfitExplainer } from './explain';
+import { useLive } from './live';
 import { PayShiftMark, PoweredByRazorpay } from './logos';
 import { Badge, Tile } from './ui';
 
@@ -149,7 +150,7 @@ function Hero({ d, cost, onOpen }: { d: DaySummary | undefined; cost: CostInputs
 }
 
 export function OverviewClient({
-  days,
+  days: serverDays,
   cost,
   initial,
 }: {
@@ -157,6 +158,17 @@ export function OverviewClient({
   cost: CostInputs;
   initial: { date?: string; range?: string; show?: string; from?: string; to?: string };
 }) {
+  // Show a just-started campaign on its day straight away, before the server data catches up.
+  const live = useLive().state?.active_runs;
+  const days: DaySummary[] = useMemo(() => {
+    if (!live?.length) return serverDays;
+    return serverDays.map((d) => {
+      const extra = live.filter((r) => r.date === d.date && !d.campaigns.some((c) => c.id === r.id));
+      if (!extra.length) return d;
+      const add = extra.map((r) => ({ id: r.id, status: r.status, created_at: new Date().toISOString(), order_count: r.order_count, progress: r.progress, eta_seconds: r.eta_seconds }) as unknown as DayCampaign);
+      return { ...d, campaigns: [...d.campaigns, ...add] };
+    });
+  }, [serverDays, live]);
   const oldest = days[days.length - 1]?.date ?? '';
   const newest = days[0]?.date ?? '';
   const [range, setRange] = useState<Range>((['7', '14', '30', 'custom'].includes(initial.range ?? '') ? initial.range : '14') as Range);

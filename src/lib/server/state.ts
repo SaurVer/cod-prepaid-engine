@@ -9,6 +9,7 @@ export interface ActiveCampaign {
   progress: number;
   eta_seconds: number | null;
   order_count: number;
+  date: string;
 }
 
 export interface AppState {
@@ -57,6 +58,7 @@ export async function getAppState(db: Db, role: string): Promise<AppState> {
       progress: Number(r.progress),
       eta_seconds: r.eta_seconds,
       order_count: Number(r.order_count),
+      date: (r.source_batch_ids?.[0] ?? '') as string,
     })),
     notifications: notes.map((n) => ({ ...n, id: Number(n.id) })),
     unread: Number(unread),
