@@ -102,19 +102,21 @@ function Hero({ d, cost, onOpen }: { d: DaySummary | undefined; cost: CostInputs
           PayShift picks which cash-on-delivery customers to nudge, writes the WhatsApp message, and they pay in one tap with Razorpay before the order ships.
         </p>
         {today && (
-          <div className="mt-auto flex items-end gap-3">
+          <div className="mt-auto flex items-center gap-4">
+            <div className="grid flex-1 grid-cols-4 gap-3">
             {[
               ['Orders today', num(today.total)],
               ['Cash on delivery', num(today.cod)],
-              ['Ready for a campaign', num(today.ready)],
-              ...(today.ready > 0 && stake ? [['At stake if they stay COD', inr(stake.total)]] : []),
+              ['Ready to nudge', num(today.ready)],
+              ['COD cost at stake', stake ? inr(stake.total) : '—'],
             ].map(([l, v]) => (
-              <div key={l} className="min-w-[128px] rounded-xl border border-line bg-white/80 px-4 py-3 shadow-card">
-                <div className="text-[11px] font-medium text-ink-faint">{l}</div>
-                <div className="mt-0.5 text-[22px] font-semibold tabular-nums text-[#0F1E3A]">{v}</div>
+              <div key={l} className="h-[76px] min-w-0 rounded-xl border border-line bg-white/80 px-4 py-3 shadow-card">
+                <div className="truncate whitespace-nowrap text-[11.5px] font-medium text-ink-faint">{l}</div>
+                <div className="mt-1 truncate text-[22px] font-semibold tabular-nums leading-tight text-[#0F1E3A]">{v}</div>
               </div>
             ))}
-            <div className="ml-auto flex flex-col items-end gap-2">
+            </div>
+            <div className="flex shrink-0 flex-col items-end gap-2 [&_button.btn]:whitespace-nowrap">
               {running ? (
                 <Link href={`/campaigns/${running.id}`} className="btn">
                   Campaign running · {Math.round(running.progress)}%
@@ -129,7 +131,7 @@ function Hero({ d, cost, onOpen }: { d: DaySummary | undefined; cost: CostInputs
                   ready={today.ready}
                   past={false}
                   defaults={{ holdout_pct: cost.holdout_pct, exploration_pct: cost.exploration_pct }}
-                  label="Run today's campaign"
+                  label="Run campaign"
                 />
               ) : null}
               <button className="text-[12.5px] font-medium text-rzp hover:underline" onClick={onOpen}>
