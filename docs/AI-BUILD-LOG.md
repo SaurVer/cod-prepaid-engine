@@ -59,8 +59,7 @@ flowchart LR
 | **Spoke my early prompts** instead of typing them | Thinking out loud about merchants and payers was fast; the AI turned rambling voice notes into structured problem documents |
 | **Two models checking each other.** Claude drafted; ChatGPT critically examined Claude's build prompt | After this review, the final build prompt dropped a heavier stack before any code was written |
 | **One spec file as the single source of truth** (`v1 → v4.9`) | Every build session started from the same document; every change updated it, so the note, spec and product never contradict each other |
-| **An agent with live connectors** (Supabase, Vercel, GitHub) | It wrote code, applied database migrations, pushed, and confirmed each deploy. 27 commits and a working, deployed product in 2 days |
-| **Review rounds as numbered issue lists** | I reviewed the live site like a PM and the agent cleared each list in one pass |
+| **An agent with live connectors** (Supabase, Vercel, GitHub), cleared by **numbered review lists** | A working, deployed product in 2 days: about 30 commits on 11–12 Oct (`git log`) |
 | **AI used for the demo video too** | Animation, a script timed to the second against the recording, and narration with a script that fits each line to its slot |
 
 ---
@@ -98,16 +97,7 @@ flowchart LR
 - Secrets (database URL, Anthropic API key, model name) live only in environment variables; only `.env.example` is committed.
 - Hosting: Vercel (Mumbai region), next to the Supabase Postgres database (Mumbai).
 
-**The loop I ran for every change**
-
-```mermaid
-flowchart LR
-  R["🧭 I review the<br/>live site"] --> P["🗣️ Numbered<br/>issue list"]
-  P --> A["🤖 Agent edits code<br/>+ updates spec"]
-  A --> T["✅ Type-check,<br/>tests"]
-  T --> G["Commit → push<br/>→ Vercel deploy"]
-  G --> R
-```
+**The loop for every change:** I review the live site → write a numbered issue list → the agent edits the code and updates the spec → type-check and tests → commit, push, Vercel deploy → I review again.
 
 **Standing rules I gave the build agent** (from the build prompt in Stage 4):
 
@@ -491,23 +481,41 @@ Added later, while building:
 - The claim was removed from what the model does. "The model recommending configuration changes" went onto the spec's **Do not include** list, with only a "coming later" mention.
 - The merchant keeps those levers directly: discount amount, control % and random-test %, and unticking orders before sending.
 
-### More corrections
+### More corrections, by how much they mattered
 
-| # | ⛔ AI output | Why I rejected it | 🧭 Fix |
-|---|---|---|---|
-| 1 | **"Extra profit so far" showed −₹58,547** on recent campaigns | Cancellations are known the next day; deliveries take 3–5 days. Early numbers were mostly ₹0 cancellations, so the average was biased low. The arithmetic was right; the sample was wrong | Profit per *shipped* order, scaled by the share not cancelled; shown only once half of each group is known; otherwise "Measuring · x% known" |
-| 2 | Build prompt with **pg_cron, Realtime, Edge Functions** | More moving parts than a demo needs; background jobs that could fail on camera | Banned; a clock that catches up on each page load, plus chunked API calls |
-| 3 | A **thin spec** | "how would you set up supabase without taking my inputs" | Appendices with exact values, so nothing is guessed |
-| 4 | **Simulated clock** with Pause / Advance day | No merchant understands "sim time" | Real dates; orders arrive through the day |
-| 5 | **Calendar grid** of days | Harder to scan than before | Three dropdown filters |
-| 6 | **Analyst language** ("EV", "uplift", "holdout") | Merchants and judges couldn't follow it | "Out of 100 orders like this one…", totals-based sums |
-| 7 | **Generic checkout** in the animation | Didn't look like Razorpay | Rebuilt from the live Razorpay checkout layout |
+Not every correction carries equal weight. The ones that changed whether the product is **correct or trustworthy** come first; interface fixes are listed separately.
+
+**Major: model correctness, reliability, honesty of the numbers**
+
+| ⛔ AI output | Why I rejected it | 🧭 Fix |
+|---|---|---|
+| **"Extra profit so far" showed −₹58,547** on recent campaigns | Cancellations are known the next day; deliveries take 3–5 days. Early numbers were mostly ₹0 cancellations, so the average was biased low. The arithmetic was right; the sample was wrong. A merchant would have switched off a working campaign | Profit per *shipped* order, scaled by the share not cancelled; shown only once half of each group is known; otherwise "Measuring · x% known" |
+| **An incomplete outcome model** (Stage 2) | Without the chances of cancellation and return under each action, the cheapest-looking action could be the most expensive one | Five outcomes, each with a probability and a payoff, for all three actions |
+| **A thin spec** (Stage 3) | "how would you set up supabase without taking my inputs". A thin spec means the agent guesses, and guesses become silent assumptions | Appendices with exact values, so nothing is guessed |
+| **Build prompt with pg_cron, Realtime, Edge Functions** (Stage 3) | More moving parts than a demo needs; background jobs that could fail on camera | Banned; a clock that catches up on each page load, plus chunked API calls |
+
+**Merchant experience**
+
+| ⛔ AI output | Why I rejected it | 🧭 Fix |
+|---|---|---|
+| **Simulated clock** with Pause / Advance day | No merchant understands "sim time" | Real dates; orders arrive through the day |
+| **Analyst language** ("EV", "uplift", "holdout") | Merchants and judges couldn't follow it | "Out of 100 orders like this one…", totals-based sums |
+
+**Interface polish** (kept short on purpose)
+
+| ⛔ AI output | 🧭 Fix |
+|---|---|
+| Calendar grid of days | Three dropdown filters |
+| Generic checkout in the animation | Rebuilt from the live Razorpay checkout layout |
 
 ---
 
 ## 6. What AI did vs what I decided or built
 
-| 🧭 I decided / built | 🤖 AI did |
+> [!NOTE]
+> To be precise: **Claude wrote essentially all of the code.** My part was the product: the original ideas, the requirements, the critique of every output, testing on the live site, and approval. The AI's part was structuring, coding, documentation, debugging and deployment. That split is the point of the exercise: I used AI to multiply what one PM could ship in two days.
+
+| 🧭 My contribution: ideas, requirements, critique, testing, approval | 🤖 AI's contribution: structuring, coding, docs, debugging, deployment |
 |---|---|
 | **The problem:** COD costs merchants money, and blanket discounts are wasted on customers who'd pay online with a plain reminder | Turned my voice notes into structured problem and solution documents |
 | **The scope:** repeat COD customers only; no checkout intervention; no first-time customers, social sellers or high-return-risk orders | Wrote the build spec from my vision prompt, then kept it in sync (v1 → v4.9) |
@@ -544,13 +552,17 @@ Added later, while building:
 > - **Over-trusting the model.** The merchant sees every decision and its sum, can exclude orders, and decides when to retrain. The model never changes its own settings.
 > - **LLM wording.** The LLM writes text only, and every draft is checked against fixed rules (length, link, no discount in a reminder, no customer data beyond what was given). It cannot change the action, the amount or who receives a message.
 
-### Verification
+### Verification (each claim points to something a judge can check)
 
-| ✅ Check | How |
-|---|---|
-| Decision maths | Unit tests reproduce the spec's worked example (EV ₹257.50 / ₹285.13 / ₹260.70 → choose the reminder). `npm test`: **13 of 13 pass** |
-| Hard rules | The database rejects any send to an order that already paid online (tested). Control-group and past-dispatch orders are blocked at the database level |
-| Every number traces back | The Decision Inspector shows, for any order: what the model knew, the predicted chances, the sum for each action, and why one won |
-| Live data | SQL checks against the live database, e.g. confirming "Measuring · 11% known" was rising on schedule rather than stuck |
-| Claims vs product | The product note was checked against what's built; anything not built went to "Do not include" |
-| Every deploy | Reviewed screen by screen on the live site before the next round |
+| ✅ Check | How | Where to check |
+|---|---|---|
+| Decision maths | Unit tests reproduce the spec's worked example (EV ₹257.50 / ₹285.13 / ₹260.70 → choose the reminder). **13 of 13 tests pass** | `npm test` · [`tests/`](../tests) |
+| Probabilities add up | For each action, the chances of paying online (P) and cancelling (K) are rescaled if P + K would exceed 1, so the five outcome probabilities always sum to 1. A test asserts P + K ≤ 1 | [`src/lib/core/model.ts`](../src/lib/core/model.ts) · [`tests/sim-model-llm.test.ts`](../tests/sim-model-llm.test.ts) |
+| Hard rules in the database | Database triggers refuse to message an order that has paid online, a control-group order, an order past dispatch, or one over the send limit | [`db/migrations/0002_hard_rules.sql`](../db/migrations/0002_hard_rules.sql) |
+| LLM only writes wording | Every draft is validated (length, link, no discount in a reminder) before it can be sent; failures fall back to a fixed template and are flagged | [`src/lib/core/llm.ts`](../src/lib/core/llm.ts) |
+| Which LLM runs in the product | Set by the `LLM_MODEL` environment variable; the default in the repo is `claude-haiku-5-5` | [`.env.example`](../.env.example) |
+| Speed fix | A covering index plus a rewritten daily query; measured on the database at about 0.5 s before and 0.2 s after | [`db/migrations/0004_speed.sql`](../db/migrations/0004_speed.sql) |
+| Every number traces back | The Decision Inspector shows, for any order: what the model knew, the predicted chances, the sum for each action, and why one won | Live site → any order → **Why?** |
+| Live data | SQL checks against the live database, e.g. confirming "Measuring · 11% known" was rising on schedule rather than stuck | — |
+| Claims vs product | The product note was checked against what's built; anything not built went to "Do not include" | Spec §10 |
+| Build history | About 30 commits on 11–12 Oct; spec change notes v4.1–v4.9 at the top of the spec | `git log` · [spec](./cod-prepaid-prototype-spec.md) |
