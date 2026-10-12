@@ -36,7 +36,7 @@ async function getPool(): Promise<any> {
       return new lib.Pool({
         connectionString: url,
         ssl: url.includes('localhost') ? false : { rejectUnauthorized: false },
-        max: 3,
+        max: 6,
         idleTimeoutMillis: 10_000,
       });
     })();

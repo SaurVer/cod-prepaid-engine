@@ -201,7 +201,7 @@ function soFar(m: any, h: any): number | null {
 async function campaignStats(db: Db, runIds: number[]): Promise<Map<number, Omit<DayCampaign, 'id' | 'status' | 'created_at' | 'order_count' | 'progress' | 'eta_seconds' | 'replay' | 'holdout_pct' | 'explore_pct'>>> {
   const out = new Map();
   if (!runIds.length) return out;
-  const groups = await db.query(
+  const [groups, funnel, gains] = await Promise.all([db.query(
     `select ro.run_id, ro.assignment_group as g, count(*)::int as n, count(o.final_outcome)::int as resolved,
        avg(case when o.final_outcome = 'cancelled' then 0
                 when o.final_outcome = 'rto' then -(r.settings_snapshot->>'rto_cost')::numeric
@@ -223,8 +223,7 @@ async function campaignStats(db: Db, runIds: number[]): Promise<Map<number, Omit
      where ro.run_id = any($1::int[]) and ro.assignment_group in ('model', 'holdout')
      group by 1, 2`,
     [runIds],
-  );
-  const funnel = await db.query(
+  ), db.query(
     `select s.run_id, count(distinct s.id)::int as sent,
        count(distinct e.send_id) filter (where e.type = 'opened')::int as opened,
        count(distinct e.send_id) filter (where e.type = 'clicked')::int as clicked,
@@ -232,13 +231,12 @@ async function campaignStats(db: Db, runIds: number[]): Promise<Map<number, Omit
      from sends s left join events e on e.send_id = s.id
      where s.run_id = any($1::int[]) group by 1`,
     [runIds],
-  );
-  const gains = await db.query(
+  ), db.query(
     `select ro.run_id, coalesce(sum(case d.chosen_action when 'nudge' then d.gain_nudge when 'discount' then d.gain_discount else 0 end), 0) as g
      from run_orders ro join decisions d on d.run_id = ro.run_id and d.order_id = ro.order_id
      where ro.run_id = any($1::int[]) and ro.assignment_group = 'model' group by 1`,
     [runIds],
-  );
+  )]);
   for (const id of runIds) {
     const m = groups.find((g) => Number(g.run_id) === id && g.g === 'model');
     const h = groups.find((g) => Number(g.run_id) === id && g.g === 'holdout');
@@ -273,21 +271,27 @@ async function campaignStats(db: Db, runIds: number[]): Promise<Map<number, Omit
 export async function daySummaries(db: Db, limit = 30, only?: string): Promise<DaySummary[]> {
   const today = istDate(Date.now());
   const days = await db.query(
-    `with b as (
+    `with b as materialized (
        select * from order_batches where not is_pilot ${only ? 'and id = $3' : ''} order by sim_date desc limit $1
      ),
-     in_run as (select distinct order_id from run_orders where run_id > 0)
+     agg as (
+       select o.batch_id,
+         count(*) filter (where o.payment_mode = 'prepaid')::int as prepaid,
+         count(*) filter (where o.eligible and o.converted_at is null and r.order_id is null and (
+           case when b.id >= $2 then o.lifecycle_state = 'eligible' and not o.dispatched and o.dispatch_deadline > s.sim_now
+                else o.placed_at < ((b.sim_date + time '${String(DEFAULTS.history_campaign_hour).padStart(2, '0')}:00') at time zone 'Asia/Kolkata') end))::int as ready,
+         count(*) filter (where o.send_count > 0)::int as messaged,
+         count(*) filter (where o.converted_via in ('nudge', 'discount'))::int as paid_after_msg
+       from orders o
+       join b on b.id = o.batch_id
+       join system_settings s on s.id = 1
+       left join run_orders r on r.order_id = o.id and r.run_id > 0
+       group by o.batch_id
+     )
      select b.id, b.planned_total, b.total_orders, b.cod_orders, b.eligible_orders,
-       count(o.id) filter (where o.payment_mode = 'prepaid')::int as prepaid,
-       count(o.id) filter (where o.eligible and o.converted_at is null and r.order_id is null and (
-         case when b.id >= $2 then o.lifecycle_state = 'eligible' and not o.dispatched and o.dispatch_deadline > s.sim_now
-              else o.placed_at < ((b.sim_date + time '${String(DEFAULTS.history_campaign_hour).padStart(2, '0')}:00') at time zone 'Asia/Kolkata') end))::int as ready,
-       count(o.id) filter (where o.send_count > 0)::int as messaged,
-       count(o.id) filter (where o.converted_via in ('nudge', 'discount'))::int as paid_after_msg
-     from b join system_settings s on s.id = 1
-     left join orders o on o.batch_id = b.id
-     left join in_run r on r.order_id = o.id
-     group by b.id, b.planned_total, b.total_orders, b.cod_orders, b.eligible_orders, b.sim_date
+       coalesce(agg.prepaid, 0) as prepaid, coalesce(agg.ready, 0) as ready,
+       coalesce(agg.messaged, 0) as messaged, coalesce(agg.paid_after_msg, 0) as paid_after_msg
+     from b left join agg on agg.batch_id = b.id
      order by b.sim_date desc`,
     only ? [limit, today, only] : [limit, today],
   );

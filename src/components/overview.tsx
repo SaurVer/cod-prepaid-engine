@@ -549,9 +549,7 @@ function DayPanel({ d, cost, back }: { d: DaySummary; cost: CostInputs; back: st
                       {num(d.ready)} orders are ready for a campaign
                     </div>
                     <div className="mt-0.5 text-[12px] text-ink-soft">
-                      {d.past
-                        ? `Messages go out at 9 PM on ${dayLabel(d.date)}; results up to today appear right after you send.`
-                        : 'The AI scores each order, picks no message, a reminder or a ₹50 off offer, and drafts the message. Nothing is sent until you approve.'}
+                      The AI scores each order, picks no message, a reminder or a ₹50 off offer, and drafts the message. Nothing is sent until you approve.
                     </div>
                   </div>
                   <RunCampaignButton

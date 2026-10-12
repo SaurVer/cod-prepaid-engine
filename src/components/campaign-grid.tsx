@@ -365,11 +365,6 @@ export function ApproveSend({ runId, name, replayOf }: { runId: number; name: st
             <p className="mt-1 text-[13px] text-ink-soft">
               Messages go to each customer on their preferred channel with a one-tap pay-online link. Sending is simulated in this prototype.
             </p>
-            {replayOf && (
-              <p className="mt-2 rounded-lg bg-warn-soft px-3 py-2 text-[12px] text-warn">
-                Messages go out at 9 PM on {replayOf}. Responses, shipping and deliveries up to today are filled in as soon as you confirm.
-              </p>
-            )}
             <div className="mt-4 grid grid-cols-2 gap-3">
               {[
                 ['Orders to message', num(summary.to_message), `${num(summary.nudges)} reminders · ${num(summary.discounts)} ₹50 off offers`],
