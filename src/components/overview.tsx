@@ -10,6 +10,7 @@ import type { CostInputs, DayCampaign, DaySummary } from '@/lib/server/results.t
 import { CampaignProgress, RunCampaignButton } from './campaign-actions';
 import { DailyChart } from './charts';
 import { ExtraProfitExplainer } from './explain';
+import { PayShiftMark, PoweredByRazorpay } from './logos';
 import { Badge, Tile } from './ui';
 
 type Status = 'running' | 'review' | 'sent' | 'open' | 'live' | 'done';
@@ -77,48 +78,71 @@ const GRID = 'grid grid-cols-[160px_1fr_1fr_1fr_180px_1fr_1.2fr_28px] items-cent
 
 const KEY = 'payshift-overview';
 /** Today at a glance, with the next action. */
-function TodayStrip({ d, cost, onOpen }: { d: DaySummary | undefined; cost: CostInputs; onOpen: () => void }) {
-  if (!d || d.past) return null;
-  const s = dayStatus(d);
-  const stake = costFor(cost, d.ready);
-  const review = d.campaigns.find((c) => c.status === 'ready_for_review');
-  const running = d.campaigns.find((c) => ACTIVE.includes(c.status));
+/** Top of the Overview: product banner + today's numbers on the left, the customer's journey animation on the right. */
+function Hero({ d, cost, onOpen }: { d: DaySummary | undefined; cost: CostInputs; onOpen: () => void }) {
+  const today = d && !d.past ? d : null;
+  const s = today ? dayStatus(today) : null;
+  const stake = today ? costFor(cost, today.ready) : null;
+  const review = today?.campaigns.find((c) => c.status === 'ready_for_review');
+  const running = today?.campaigns.find((c) => ACTIVE.includes(c.status));
   return (
-    <div className="card flex flex-wrap items-center gap-x-8 gap-y-3 px-5 py-3.5">
-      <div>
-        <div className="label">Today so far</div>
-        <div className="mt-0.5 text-[13px] text-ink-soft">
-          <b className="text-ink">{num(d.total)}</b> orders · <b className="text-ink">{num(d.cod)}</b> cash on delivery ·{' '}
-          <b className="text-ink">{num(d.ready)}</b> ready for a campaign
+    <div className="grid grid-cols-12 gap-4">
+      <div className="relative col-span-8 flex h-[440px] flex-col overflow-hidden rounded-2xl bg-[#0B1529] px-8 py-7 text-white">
+        <div className="pointer-events-none absolute -left-24 -top-32 h-96 w-96 rounded-full bg-[#305EFF]/30 blur-3xl" />
+        <div className="relative flex items-center gap-3">
+          <PayShiftMark light size={24} />
+          <span className="text-[17px] font-semibold tracking-[-0.01em]">PayShift</span>
+          <span className="h-4 w-px bg-white/20" />
+          <PoweredByRazorpay light />
         </div>
+        <div className="relative mt-8 text-[34px] font-semibold leading-[1.1] tracking-[-0.02em]">
+          COD in. <span className="text-[#7EA0FF]">Prepaid out.</span>
+        </div>
+        <p className="relative mt-3 max-w-[520px] text-[14px] leading-relaxed text-white/65">
+          PayShift picks which cash-on-delivery customers to nudge, writes the WhatsApp message, and they pay in one tap with Razorpay before the order ships.
+        </p>
+        {today && (
+          <div className="relative mt-auto rounded-xl border border-white/10 bg-white/[0.06] p-4">
+            <div className="flex items-end gap-8">
+              {[
+                ['Orders today', num(today.total)],
+                ['Cash on delivery', num(today.cod)],
+                ['Ready for a campaign', num(today.ready)],
+                ...(today.ready > 0 && stake ? [['At stake if they stay COD', inr(stake.total)]] : []),
+              ].map(([l, v]) => (
+                <div key={l}>
+                  <div className="text-[11px] font-medium uppercase tracking-[0.04em] text-white/50">{l}</div>
+                  <div className="mt-0.5 text-[22px] font-semibold tabular-nums">{v}</div>
+                </div>
+              ))}
+              <div className="ml-auto flex items-center gap-2">
+                {running ? (
+                  <Link href={`/campaigns/${running.id}`} className="btn !border-white/20 !bg-white/10 !text-white">
+                    Campaign running · {Math.round(running.progress)}%
+                  </Link>
+                ) : review ? (
+                  <Link href={`/campaigns/${review.id}`} className="btn btn-primary">
+                    Review &amp; send →
+                  </Link>
+                ) : s === 'open' ? (
+                  <RunCampaignButton
+                    date={today.date}
+                    ready={today.ready}
+                    past={false}
+                    defaults={{ holdout_pct: cost.holdout_pct, exploration_pct: cost.exploration_pct }}
+                    label="Run today's campaign"
+                  />
+                ) : null}
+                <button className="btn !border-white/20 !bg-white/10 !text-white hover:!bg-white/20" onClick={onOpen}>
+                  Open today
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-      {d.ready > 0 && (
-        <div>
-          <div className="label">At stake if they stay COD</div>
-          <div className="mt-0.5 text-[15px] font-semibold">{inr(stake.total)}</div>
-        </div>
-      )}
-      <div className="ml-auto flex items-center gap-2">
-        {running ? (
-          <Link href={`/campaigns/${running.id}`} className="btn">
-            Campaign running · {Math.round(running.progress)}%
-          </Link>
-        ) : review ? (
-          <Link href={`/campaigns/${review.id}`} className="btn btn-primary">
-            Review &amp; send today&apos;s campaign →
-          </Link>
-        ) : s === 'open' ? (
-          <RunCampaignButton
-            date={d.date}
-            ready={d.ready}
-            past={false}
-            defaults={{ holdout_pct: cost.holdout_pct, exploration_pct: cost.exploration_pct }}
-            label="Run today's campaign"
-          />
-        ) : null}
-        <button className="btn" onClick={onOpen}>
-          Open today
-        </button>
+      <div className="col-span-4 h-[440px] overflow-hidden rounded-2xl bg-[#0B1529]">
+        <iframe src="/payshift-hero.html" title="A COD customer paying online with Razorpay" className="h-full w-full border-0" loading="lazy" />
       </div>
     </div>
   );
@@ -230,7 +254,7 @@ export function OverviewClient({
 
   return (
     <div className="space-y-5">
-      <TodayStrip d={days[0]} cost={cost} onOpen={() => pick(newest)} />
+      <Hero d={days[0]} cost={cost} onOpen={() => pick(newest)} />
 
       {/* Filters */}
       <div className="card flex flex-wrap items-end gap-x-5 gap-y-3 px-4 py-3">

@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>COD to Prepaid</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --navy: #0B1529; --wa: #008069; --wa-bg: #EFEAE2; --wa-link: #027EB5; --rzp: #2B6CF6; --rzp-dark: #0B3C8C; --ok: #1DA851; --ink: #111B21; --soft: #667781; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--navy); overflow: hidden; font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { display: grid; place-items: center; }
+  .glow { position: fixed; width: 520px; height: 520px; border-radius: 50%; background: radial-gradient(circle, rgba(48,94,255,.28), transparent 65%); top: -160px; left: -140px; pointer-events: none; }
+  .stage { transform-origin: center; }
+  .phone { position: relative; width: 320px; height: 660px; border-radius: 46px; background: #05080F; padding: 9px; box-shadow: 0 40px 80px rgba(0,0,0,.55), inset 0 0 0 1.5px rgba(255,255,255,.08); }
+  .screen { position: relative; width: 100%; height: 100%; border-radius: 38px; overflow: hidden; background: #000; }
+  .island { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: 92px; height: 26px; border-radius: 20px; background: #000; z-index: 50; }
+  .status { position: absolute; top: 0; left: 0; right: 0; height: 44px; display: flex; justify-content: space-between; align-items: center; padding: 6px 26px 0 30px; font-size: 13px; font-weight: 600; z-index: 40; }
+  .status .icons { display: flex; gap: 5px; align-items: center; }
+  .status .bat { width: 22px; height: 11px; border-radius: 3px; border: 1.5px solid currentColor; position: relative; }
+  .status .bat::after { content: ""; position: absolute; inset: 1.5px; right: 5px; background: currentColor; border-radius: 1px; }
+  .layer { position: absolute; inset: 0; transition: opacity .45s ease, transform .45s ease; }
+  .hidden { opacity: 0; pointer-events: none; }
+
+  /* lock screen */
+  .lock { background: linear-gradient(170deg, #1C2B52 0%, #2A3466 45%, #4A2F5E 100%); color: #fff; }
+  .lock .time { margin-top: 92px; text-align: center; font-size: 76px; font-weight: 300; letter-spacing: -2px; line-height: 1; }
+  .lock .date { text-align: center; font-size: 15px; opacity: .8; margin-top: 6px; }
+  .notif { position: absolute; left: 12px; right: 12px; top: 210px; background: rgba(245,245,247,.88); backdrop-filter: blur(20px); border-radius: 20px; padding: 12px 14px; color: var(--ink); transform: translateY(-30px); opacity: 0; transition: all .5s cubic-bezier(.2,.9,.3,1.2); }
+  .notif.show { transform: translateY(0); opacity: 1; }
+  .notif .app { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: #555; }
+  .wa-icon { width: 20px; height: 20px; border-radius: 6px; background: #25D366; display: grid; place-items: center; }
+  .notif .row { display: flex; gap: 10px; margin-top: 8px; }
+  .notif .t { font-size: 14px; font-weight: 600; }
+  .notif .b { font-size: 13.5px; color: #333; line-height: 1.35; }
+  .notif .app .now { margin-left: auto; }
+
+  /* brand mark */
+  .mark { flex: none; border-radius: 50%; background: #1F3B33; display: grid; place-items: center; }
+
+  /* WhatsApp */
+  .wa { background: var(--wa-bg); color: var(--ink); }
+  .wa-head { position: absolute; top: 0; left: 0; right: 0; height: 104px; background: #fff; border-bottom: 1px solid #e3e3e3; z-index: 5; }
+  .wa-head .bar { position: absolute; bottom: 10px; left: 10px; right: 14px; display: flex; align-items: center; gap: 10px; }
+  .wa-head .back { color: var(--wa); font-size: 26px; line-height: 1; margin-right: -2px; }
+  .wa-head .name { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+  .wa-head .sub { font-size: 12px; color: var(--soft); }
+  .wa-head .sub.typing { color: var(--wa); }
+  .wa-body { position: absolute; top: 104px; left: 0; right: 0; bottom: 58px; display: flex; flex-direction: column; justify-content: flex-end; gap: 8px; padding: 10px 12px; overflow: hidden;
+    background-image: radial-gradient(rgba(0,0,0,.035) 1px, transparent 1px); background-size: 14px 14px; }
+  .chip, .msg { flex-shrink: 0; }
+  .chip { align-self: center; background: #fff; color: var(--soft); font-size: 11.5px; padding: 4px 10px; border-radius: 8px; box-shadow: 0 1px .5px rgba(0,0,0,.1); }
+  .msg { align-self: flex-start; width: 88%; background: #fff; border-radius: 10px; border-top-left-radius: 2px; box-shadow: 0 1px .5px rgba(0,0,0,.13); overflow: hidden; }
+  .msg .txt { padding: 8px 10px 4px; font-size: 13.6px; line-height: 1.38; white-space: pre-line; }
+  .msg .ts { text-align: right; font-size: 10.5px; color: var(--soft); padding: 0 10px 6px; }
+  .msg .btn { border-top: 1px solid #ececec; color: var(--wa-link); font-size: 14px; font-weight: 500; text-align: center; padding: 10px 0; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background .2s; }
+  .msg .btn.pressed { background: #e6f2f9; }
+  .msg.new { animation: pop .45s cubic-bezier(.2,.9,.3,1.2) both; }
+  .msg.collapsed { display: none; }
+  @keyframes pop { from { transform: translateY(14px) scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
+  .wa-input { position: absolute; left: 0; right: 0; bottom: 0; height: 58px; background: #F0F2F5; display: flex; align-items: center; gap: 8px; padding: 0 10px 8px; }
+  .wa-input .box { flex: 1; height: 36px; background: #fff; border-radius: 18px; color: #999; font-size: 14px; display: flex; align-items: center; padding: 0 14px; }
+  .wa-input .mic { width: 36px; height: 36px; border-radius: 50%; background: var(--wa); }
+
+  /* Razorpay Checkout (mobile) — layout matched to the live checkout on razorpay.com/demo */
+  .rzp { background: #005CF0; color: #fff; font-family: Inter, system-ui, -apple-system, sans-serif; transform: translateY(100%); transition: transform .5s cubic-bezier(.2,.8,.2,1), opacity .3s; }
+  .rzp.open { transform: translateY(0); }
+  .rzp .x { position: absolute; right: 14px; top: 44px; width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,.3); display: grid; place-items: center; font-size: 13px; }
+  .rzp .logo { position: absolute; left: 50%; top: 66px; transform: translateX(-50%); width: 56px; height: 56px; border-radius: 14px; background: #fff; display: grid; place-items: center; box-shadow: 0 0 0 6px rgba(255,255,255,.06); }
+  .rzp .mn { position: absolute; left: 0; right: 0; top: 134px; text-align: center; font-size: 18px; font-weight: 600; }
+  .rzp .trust { position: absolute; left: 50%; top: 162px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; white-space: nowrap; font-size: 9.5px; font-weight: 500; background: rgba(255,255,255,.08); padding: 3px 8px; border-radius: 6px; }
+  .rzp .ta { position: absolute; left: 14px; top: 214px; font-size: 12.5px; opacity: .9; }
+  .rzp .amt { position: absolute; left: 14px; top: 232px; font-size: 32px; font-weight: 600; letter-spacing: -.5px; }
+  .rzp .social { position: absolute; left: 0; right: 0; top: 290px; height: 36px; background: rgba(102,161,255,.5); display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 11px; font-weight: 500; }
+  .rzp .sheet { position: absolute; left: 0; right: 0; top: 318px; bottom: 0; background: #fff; border-radius: 14px 14px 0 0; color: #000A1A; padding: 14px 14px 0; }
+  .rzp .h { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+  .rzp .opt { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px; border: 1px solid #E5E8EC; border-radius: 10px; font-size: 13px; font-weight: 500; transition: all .2s; }
+  .rzp .opt + .opt { margin-top: 8px; }
+  .rzp .opt.sel { border-color: #005CF0; background: #F0F5FF; box-shadow: 0 0 0 2px rgba(0,92,240,.15); }
+  .rzp .ai { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; color: #fff; font-size: 10px; font-weight: 800; flex: none; }
+  .rzp .more { margin-left: auto; color: rgba(0,10,26,.45); font-size: 11.5px; }
+  .rzp .radio { margin-left: auto; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid #B8C0CC; transition: all .2s; }
+  .rzp .opt.sel .radio { border: 5px solid #005CF0; }
+  .rzp .cta { position: absolute; left: 14px; right: 14px; bottom: 52px; height: 42px; border-radius: 8px; background: #000A1A; color: #fff; font-size: 14.5px; font-weight: 600; display: grid; place-items: center; transition: background .2s; }
+  .rzp .cta.pressed { background: #1F2A3D; }
+  .rzp .foot { position: absolute; left: 0; right: 0; bottom: 18px; display: flex; justify-content: center; align-items: center; gap: 6px; font-size: 11px; color: rgb(118,142,167); }
+  .rzp .foot b { color: #0B1F4D; font-weight: 800; font-size: 12.5px; }
+  .rl { height: 14px; width: auto; }
+  .spin { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid #fff; border-top-color: transparent; animation: rot .7s linear infinite; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+
+  /* success */
+  .done { background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--ink); }
+  .done svg circle { transform-origin: center; transform: scale(0); transition: transform .45s cubic-bezier(.2,.9,.3,1.3); }
+  .done svg path { stroke-dasharray: 48; stroke-dashoffset: 48; transition: stroke-dashoffset .5s ease .3s; }
+  .done.go svg circle { transform: scale(1); }
+  .done.go svg path { stroke-dashoffset: 0; }
+  .done .a { margin-top: 18px; font-size: 26px; font-weight: 700; }
+  .done .s { margin-top: 4px; font-size: 13px; color: var(--soft); }
+
+  /* touch indicator */
+  .touch { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; background: rgba(255,255,255,.55); border: 2px solid rgba(255,255,255,.9); box-shadow: 0 2px 10px rgba(0,0,0,.35); z-index: 60; opacity: 0; transition: left .6s cubic-bezier(.4,0,.2,1), top .6s cubic-bezier(.4,0,.2,1), opacity .25s, transform .15s; pointer-events: none; }
+  .touch.on { opacity: 1; }
+  .touch.down { transform: scale(.78); background: rgba(255,255,255,.75); }
+  .ripple { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; border: 2px solid rgba(255,255,255,.9); z-index: 59; pointer-events: none; animation: rip .5s ease-out forwards; }
+  @keyframes rip { from { transform: scale(.6); opacity: 1; } to { transform: scale(1.9); opacity: 0; } }
+</style>
+</head>
+<body>
+<div class="glow"></div>
+<div class="stage" id="stage">
+  <div class="phone">
+    <div class="screen" id="screen">
+      <div class="island"></div>
+
+      <!-- Lock screen -->
+      <div class="layer lock" id="lock">
+        <div class="status" style="color:#fff"><span>9:00</span><span class="icons">▂▄▆ <span class="bat"></span></span></div>
+        <div class="time">9:00</div>
+        <div class="date">Monday, 12 October</div>
+        <div class="notif" id="notif">
+          <div class="app"><span class="wa-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="#fff"><path d="M12 2a10 10 0 0 0-8.7 14.9L2 22l5.3-1.3A10 10 0 1 0 12 2zm5.2 13.8c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.1-4.5-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9s.7-2.1 1-2.4c.3-.3.6-.3.8-.3h.6c.2 0 .4 0 .6.5l.9 2.1c.1.2.1.4 0 .6l-.4.6-.4.4c-.1.2-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.3 2.4 1.5.3.1.5.1.6-.1l.9-1c.2-.3.4-.2.7-.1l2 .9c.3.2.5.2.6.4.1.1.1.7-.1 1.3z"/></svg></span>WHATSAPP<span class="now">now</span></div>
+          <div class="row">
+            <span class="mark" style="width:38px;height:38px"><svg width="20" height="20" viewBox="0 0 40 40"><path d="M11 29C11 18 18 11 30 10c0 12-7 19-19 19z" fill="#E7C98C"/></svg></span>
+            <div><div class="t">Elvora</div><div class="b">Your order #EV84300 ships tomorrow morning. Pay ₹1,310 online…</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- WhatsApp -->
+      <div class="layer wa hidden" id="wa">
+        <div class="wa-head">
+          <div class="status" style="color:#111"><span>9:00</span><span class="icons">▂▄▆ <span class="bat"></span></span></div>
+          <div class="bar">
+            <span class="back">‹</span>
+            <span class="mark" style="width:38px;height:38px"><svg width="20" height="20" viewBox="0 0 40 40"><path d="M11 29C11 18 18 11 30 10c0 12-7 19-19 19z" fill="#E7C98C"/></svg></span>
+            <div>
+              <div class="name">Elvora <svg width="15" height="15" viewBox="0 0 24 24"><path fill="#25D366" d="M12 1l2.6 2.2 3.4-.4 1 3.3 3 1.7-1 3.2 1 3.2-3 1.7-1 3.3-3.4-.4L12 23l-2.6-2.2-3.4.4-1-3.3-3-1.7 1-3.2-1-3.2 3-1.7 1-3.3 3.4.4z"/><path d="M7.5 12.2l3 3 6-6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              <div class="sub" id="sub">Business account</div>
+            </div>
+          </div>
+        </div>
+        <div class="wa-body">
+          <div class="chip">Today</div>
+          <div class="msg">
+            <div class="txt">Hi Priya, thanks for shopping with Elvora!
+Your order #EV84300 is confirmed.
+Vitamin C Serum x 1
+Total: ₹1,310
+Payment: Cash on Delivery
+Expected delivery: Thu, 15 Oct</div>
+            <div class="ts">6:42 PM</div>
+            <div class="btn">↗ Track order</div>
+          </div>
+          <div class="msg collapsed" id="m2">
+            <div class="txt">Hi Priya, your Elvora order #EV84300 ships tomorrow morning.
+
+Pay ₹1,310 online now and it goes out first in the morning batch. No cash to keep ready, and anyone at home can receive it.
+
+Paying online takes 10 seconds with UPI, secured by Razorpay. Full refund to your account if anything goes wrong.</div>
+            <div class="ts">9:00 PM</div>
+            <div class="btn" id="payBtn">↗ Pay ₹1,310 now</div>
+            <div class="btn">Keep Cash on Delivery</div>
+          </div>
+          <div class="msg collapsed" id="m3">
+            <div class="txt">Payment received. ₹1,310 paid via UPI.
+Your order #EV84300 is now prepaid. Nothing to pay at delivery.</div>
+            <div class="ts">9:01 PM</div>
+          </div>
+        </div>
+        <div class="wa-input"><div class="box">Message</div><div class="mic"></div></div>
+
+      </div>
+
+      <!-- Razorpay Checkout -->
+      <div class="layer rzp hidden" id="rzp">
+        <div class="status" style="color:#fff"><span>9:00</span><span class="icons">▂▄▆ <span class="bat"></span></span></div>
+        <div class="x">✕</div>
+        <div class="logo"><svg width="30" height="30" viewBox="0 0 40 40"><rect width="40" height="40" rx="10" fill="#1F3B33"/><path d="M11 29C11 18 18 11 30 10c0 12-7 19-19 19z" fill="#E7C98C"/></svg></div>
+        <div class="mn">Elvora</div>
+        <div class="trust"><svg width="12" height="12" viewBox="0 0 24 24"><path fill="#fff" d="M12 1l9 4v6c0 5.5-3.8 10.7-9 12-5.2-1.3-9-6.5-9-12V5z"/><path d="M7.5 12.2l3 3 6-6" stroke="#005CF0" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Razorpay Trusted Business</div>
+        <div class="ta">Total Amount</div>
+        <div class="amt">₹1,310</div>
+        <div class="social"><svg width="12" height="12" viewBox="0 0 24 24" fill="#fff"><path d="M12 2l3 6.5 7 .8-5.2 4.8 1.4 7L12 17.6 5.8 21l1.4-7L2 9.3l7-.8z"/></svg>500+ orders last month from Elvora</div>
+        <div class="sheet">
+          <div class="h">Pay using UPI</div>
+          <div class="opt" id="gpay"><span class="ai" style="background:linear-gradient(135deg,#4285F4,#34A853)">G</span>Google Pay<span class="radio"></span></div>
+          <div class="opt"><span class="ai" style="background:#5F259F">पे</span>PhonePe<span class="radio"></span></div>
+          <div class="opt"><span class="ai" style="background:#E9EDF3;color:#000A1A">▭</span>Cards, Netbanking &amp; Wallet<span class="more">›</span></div>
+          <div class="cta" id="pay">Pay ₹1,310</div>
+          <div class="foot">Secured by <img src="razorpay-logo.svg" alt="Razorpay" class="rl" onerror="this.outerHTML='<b>Razorpay</b>'"> <span>•</span> Account &amp; Terms</div>
+        </div>
+      </div>
+
+      <!-- Success -->
+      <div class="layer done hidden" id="done">
+        <svg width="88" height="88" viewBox="0 0 52 52"><circle cx="26" cy="26" r="25" fill="#1DA851"/><path d="M15 27l7 7 15-16" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div class="a">₹1,310 paid</div>
+        <div class="s">via UPI · Razorpay</div>
+      </div>
+
+      <div class="touch" id="touch"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const screen = $('screen'), touch = $('touch');
+
+  // scale the phone to fit the frame
+  function fit() { const s = Math.min(innerHeight / 700, innerWidth / 360, 1.4); $('stage').style.transform = `scale(${s})`; }
+  addEventListener('resize', fit); fit();
+
+  function show(id, on) { $(id).classList.toggle('hidden', !on); }
+  function centerOf(el) {
+    const s = screen.getBoundingClientRect(), r = el.getBoundingClientRect(), k = s.width / screen.offsetWidth;
+    return [(r.left + r.width / 2 - s.left) / k, (r.top + r.height / 2 - s.top) / k];
+  }
+  async function tap(el, pressEl) {
+    const [x, y] = centerOf(el);
+    touch.style.left = x + 'px'; touch.style.top = y + 'px';
+    touch.classList.add('on');
+    await sleep(650);
+    touch.classList.add('down'); (pressEl || el).classList.add('pressed');
+    const rp = document.createElement('div'); rp.className = 'ripple'; rp.style.left = x + 'px'; rp.style.top = y + 'px'; screen.appendChild(rp);
+    setTimeout(() => rp.remove(), 600);
+    await sleep(180);
+    touch.classList.remove('down');
+    await sleep(220);
+    touch.classList.remove('on');
+  }
+  function reset() {
+    show('lock', true); show('wa', false); show('rzp', false); show('done', false);
+    $('rzp').classList.remove('open'); $('notif').classList.remove('show');
+    $('m2').classList.add('collapsed'); $('m2').classList.remove('new');
+    $('m3').classList.add('collapsed'); $('m3').classList.remove('new');
+    $('payBtn').classList.remove('pressed'); $('gpay').classList.remove('sel');
+    $('pay').classList.remove('pressed'); $('pay').textContent = 'Pay ₹1,310';
+    $('done').classList.remove('go'); $('sub').textContent = 'Business account'; $('sub').classList.remove('typing');
+    touch.style.left = '230px'; touch.style.top = '520px';
+  }
+
+  async function play() {
+    for (;;) {
+      reset();
+      await sleep(900);
+      $('notif').classList.add('show');                       // notification arrives
+      await sleep(1400);
+      await tap($('notif'));                                   // open WhatsApp
+      show('lock', false); show('wa', true);
+      await sleep(700);
+      $('sub').textContent = 'typing…'; $('sub').classList.add('typing');
+      await sleep(900);
+      $('sub').textContent = 'Business account'; $('sub').classList.remove('typing');
+      $('m2').classList.remove('collapsed'); $('m2').classList.add('new');   // the persuasive message
+      await sleep(3400);
+      await tap($('payBtn'));                                  // Pay ₹1,310 now
+      show('rzp', true); await sleep(30); $('rzp').classList.add('open'); await sleep(500); show('wa', false);
+      await sleep(1100);
+      await tap($('gpay')); $('gpay').classList.add('sel');    // choose GPay
+      await sleep(350);
+      await tap($('pay'));                                     // Pay
+      $('pay').innerHTML = '<span class="spin"></span>';
+      await sleep(1300);
+      show('done', true); await sleep(30); $('done').classList.add('go');   // success
+      await sleep(2000);
+      show('wa', true); show('done', false); show('rzp', false); $('rzp').classList.remove('open');
+      await sleep(400);
+      $('m3').classList.remove('collapsed'); $('m3').classList.add('new');  // confirmation in WhatsApp
+      await sleep(2600);
+    }
+  }
+  play();
+</script>
+</body>
+</html>
